@@ -4,6 +4,8 @@
 //
 //   - Cancel voice turn: ends the turn that is running, including the listening that follows a reply,
 //     the way TECHO5's own screen ends one with a second tap. Nothing happens when no turn is running.
+//   - Clear missed rings: forgets the rings that fell due and never sounded (ring.Missing), once the
+//     screen has shown them, as TECHO5's own screen does when they are seen.
 package screenui
 
 import (
@@ -12,6 +14,7 @@ import (
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 )
 
@@ -20,7 +23,7 @@ func init() {
 }
 
 type Feature struct {
-	cancel *esphome.Button
+	cancel, clearMissed *esphome.Button
 }
 
 var (
@@ -36,6 +39,11 @@ func Get() *Feature {
 					Category: esphome.CategoryDiagnostic},
 				OnPress: func() { voice.Get().Cancel() },
 			},
+			clearMissed: &esphome.Button{
+				Base: esphome.Base{ObjectID: "clear_missed", Name: "Clear missed rings", Icon: "mdi:bell-check-outline",
+					Category: esphome.CategoryDiagnostic},
+				OnPress: ring.ClearMissed,
+			},
 		}
 	})
 	return shared
@@ -43,4 +51,4 @@ func Get() *Feature {
 
 func (f *Feature) Name() string { return "external screen" }
 
-func (f *Feature) Entities() []esphome.Entity { return []esphome.Entity{f.cancel} }
+func (f *Feature) Entities() []esphome.Entity { return []esphome.Entity{f.cancel, f.clearMissed} }
