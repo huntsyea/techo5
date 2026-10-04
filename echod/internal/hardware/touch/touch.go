@@ -17,12 +17,16 @@ import (
 	"time"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
+	"github.com/HuskerMinion/techo5/echod/internal/hardware/screen"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/input"
 	"github.com/HuskerMinion/techo5/echod/internal/service"
 )
 
 func init() {
+	if screen.HandedOff() {
+		return // another program reads the touchscreen
+	}
 	component.Register(component.Hardware, Get(), component.Order(20),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
