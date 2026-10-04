@@ -91,6 +91,9 @@ const (
 	evSpeaking                     // VAD detected speech has started
 	evSpokeEnd                     // the device heard the speaker finish; text is the turn's id
 	evLookHere                     // the answer put something on the screen: no listening again after it
+	evRunURL                       // the run named the url its reply will stream from
+	evEarly                        // Home Assistant offered the reply before it is finished
+	evEarlyFailed                  // the early fetch delivered nothing; text is why
 )
 
 type event struct {
@@ -181,6 +184,17 @@ type conversation struct {
 
 	reply reply
 
+	// runURL is where this run's reply streams from, named in its first event. earlyCancel stops a
+	// fetch of it. lateAPI says a reply played early, so Home Assistant's own push of the same audio
+	// over the API — which starts only once the reply is finished and can outlast the turn — is
+	// dropped until its stream ends.
+	runURL      string
+	earlyCancel context.CancelFunc
+	lateAPI     bool
+	// lateAPIOpen says that dropped push has started and not yet ended. A new run clears lateAPI only
+	// when it hasn't, so a push that never came cannot swallow the next reply.
+	lateAPIOpen bool
+
 	// shown is what a screen is told: the phase and the words so far. Reset when a turn opens, so a
 	// new turn never shows the last one's answer.
 	shown State
@@ -200,6 +214,8 @@ type nextTurn struct {
 type reply struct {
 	url    string
 	stream *stream
+	// early says the stream is being fed from the run's url as it is synthesized (early.go).
+	early bool
 }
 
 func newConversation(vs *esphome.VoiceSatellite) *conversation {
@@ -393,7 +409,35 @@ func (c *conversation) handle(e event) {
 		}
 		c.player.Sounding(true)
 
+	case evRunURL:
+		if !c.lateAPIOpen {
+			c.lateAPI = false
+		}
+		if c.phase != phaseIdle {
+			c.runURL = e.url
+		}
+
+	case evEarly:
+		// Not while a reply is already playing: that is a reply from before, still being heard.
+		if c.phase == phaseIdle || c.phase == phaseReplying || c.runURL == "" || c.reply.early {
+			return
+		}
+		slog.Info("early tts streaming offered: playing the reply as it is synthesized", "slot", c.slot+1)
+		c.speakEarly(c.runURL)
+
+	case evEarlyFailed:
+		// Nothing was played, so the reply is still owed by the late copies: let them in again.
+		if c.reply.early {
+			slog.Warn("early reply failed; waiting for the late copy", "err", e.text)
+			c.reply.early = false
+			c.lateAPI = false
+		}
+
 	case evStreamStart:
+		if c.reply.early || c.lateAPI {
+			c.lateAPIOpen = c.lateAPI
+			return
+		}
 		// The turn has to be claimed before the audio arrives: Home Assistant closes the run as soon
 		// as it has handed over the text, and a turn still only thinking would take that as the end
 		// and go idle, discarding everything that followed.
@@ -409,7 +453,7 @@ func (c *conversation) handle(e event) {
 		//
 		// Which of the two runs is the slot's setting, so ignoring the url here leaves the streamed
 		// copy to arrive on its own, exactly as it would have if Home Assistant had sent no url.
-		if c.phase == phaseIdle {
+		if c.phase == phaseIdle || c.reply.early {
 			return
 		}
 		if wakeword.Delivery(c.slot) == config.DeliveryStream {
@@ -418,8 +462,8 @@ func (c *conversation) handle(e event) {
 		c.speak(e.url)
 
 	case evStreamAudio:
-		// Retired as soon as a url arrives.
-		if c.phase == phaseIdle || c.reply.url != "" {
+		// Retired as soon as a url arrives, and not wanted at all when the reply played early.
+		if c.phase == phaseIdle || c.reply.url != "" || c.reply.early || c.lateAPI {
 			return
 		}
 		if c.phase != phaseReplying {
@@ -428,6 +472,13 @@ func (c *conversation) handle(e event) {
 		c.reply.stream.send(e.audio)
 
 	case evStreamEnd:
+		if c.lateAPI {
+			c.lateAPI, c.lateAPIOpen = false, false
+			return
+		}
+		if c.reply.early {
+			return
+		}
 		// Everything Home Assistant is going to send has been sent. What the errand is still holding
 		// back for the cushion plays, and it finishes once that has been heard.
 		if c.phase == phaseReplying && c.reply.stream != nil {
@@ -622,7 +673,9 @@ func (c *conversation) start(n nextTurn) {
 	c.shown = State{}
 	c.enter(phaseListening)
 	c.turn.Listening()
+	c.stopEarly()
 	c.reply = reply{}
+	c.runURL = ""
 
 	if effect := wakeword.Effect(slot); effect != "" {
 		c.claim.Play(effect, c.ring.Base())
@@ -701,6 +754,37 @@ func (c *conversation) speak(url string) {
 	})
 }
 
+// speakEarly starts the reply now, from the run's url, while the agent is still answering. It plays
+// through the same stream as a reply pushed over the API, so buffering, loudness and the moment the
+// reply counts as heard are all the same.
+func (c *conversation) speakEarly(url string) {
+	c.speak("")
+	s := c.reply.stream
+	c.reply.early = true
+	c.lateAPI = true
+	ctx, cancel := context.WithCancel(context.Background())
+	c.earlyCancel = cancel
+	safe.Go("early reply", func() {
+		n, err := fetchEarly(ctx, url, s)
+		switch {
+		case err != nil && n == 0 && ctx.Err() == nil:
+			c.post(event{kind: evEarlyFailed, text: err.Error()})
+		case err != nil && ctx.Err() == nil:
+			slog.Warn("early reply cut short", "bytes", n, "err", err)
+		default:
+			slog.Info("early reply fetched", "bytes", n)
+		}
+	})
+}
+
+// stopEarly abandons an early fetch, if one is running.
+func (c *conversation) stopEarly() {
+	if c.earlyCancel != nil {
+		c.earlyCancel()
+		c.earlyCancel = nil
+	}
+}
+
 // idle puts everything back. why is only for the log.
 // idle closes whatever is open. The outcome is passed rather than read back out of why, so a new way
 // for a turn to end cannot quietly report itself as one of the old ones.
@@ -722,7 +806,9 @@ func (c *conversation) idle(why string, how activity.Outcome) {
 	c.enter(phaseIdle)
 	c.claim.Clear()
 	c.player.Sounding(false)
+	c.stopEarly()
 	c.reply = reply{}
+	c.runURL = ""
 	c.hold(c.pending != nil)
 
 	if was != phaseIdle {
@@ -842,9 +928,13 @@ func (c *conversation) pipeline(e esphome.PipelineEvent) {
 		c.post(event{kind: evSpeaking})
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_STT_VAD_END:
 		c.post(event{kind: evHeard})
+	case api.VoiceAssistantEvent_VOICE_ASSISTANT_RUN_START:
+		if url := e.Data["url"]; url != "" {
+			c.post(event{kind: evRunURL, url: url})
+		}
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_INTENT_PROGRESS:
 		if e.Data["tts_start_streaming"] == "1" {
-			slog.Info("early tts streaming offered", "slot", c.slot+1)
+			c.post(event{kind: evEarly})
 		}
 
 	case api.VoiceAssistantEvent_VOICE_ASSISTANT_INTENT_END:
