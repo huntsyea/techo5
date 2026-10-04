@@ -62,6 +62,9 @@ import (
 )
 
 func init() {
+	if screen.HandedOff() {
+		return // another program draws the panel
+	}
 	component.Register(component.Device, Get(), component.Order(60),
 		component.Supervise(service.Restart(time.Second, 30*time.Second)))
 }
