@@ -94,6 +94,8 @@ const (
 	evRunURL                       // the run named the url its reply will stream from
 	evEarly                        // Home Assistant offered the reply before it is finished
 	evEarlyFailed                  // the early fetch delivered nothing; text is why
+	evAck                          // play this url now, ahead of the reply (the play_ack action)
+	evAckPumped                    // the ack's audio is all in the reply stream
 )
 
 type event struct {
@@ -190,6 +192,7 @@ type conversation struct {
 	// dropped until its stream ends.
 	runURL      string
 	earlyCancel context.CancelFunc
+	ackCancel   context.CancelFunc
 	lateAPI     bool
 	// lateAPIOpen says that dropped push has started and not yet ended. A new run clears lateAPI only
 	// when it hasn't, so a push that never came cannot swallow the next reply.
@@ -216,6 +219,12 @@ type reply struct {
 	stream *stream
 	// early says the stream is being fed from the run's url as it is synthesized (early.go).
 	early bool
+	// ack says the stream was opened by a play_ack: the agent's short holding phrase, fetched whole and
+	// played at once, with the reply appended to the same stream when it arrives (ack.go). ackDone
+	// closes once its audio is all queued; reply audio arriving before that waits in pending.
+	ack     bool
+	ackDone chan struct{}
+	pending [][]byte
 }
 
 func newConversation(vs *esphome.VoiceSatellite) *conversation {
@@ -418,12 +427,38 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evEarly:
+		if c.reply.ack && c.runURL != "" && !c.reply.early {
+			// The ack opened the reply; the answer follows it from the run's url.
+			c.followEarly(c.runURL)
+			return
+		}
 		// Not while a reply is already playing: that is a reply from before, still being heard.
 		if c.phase == phaseIdle || c.phase == phaseReplying || c.runURL == "" || c.reply.early {
 			return
 		}
 		slog.Info("early tts streaming offered: playing the reply as it is synthesized", "slot", c.slot+1)
 		c.speakEarly(c.runURL)
+
+	case evAck:
+		// Only for a turn still waiting on the agent, and once.
+		if (c.phase != phaseListening && c.phase != phaseThinking) || c.reply.ack {
+			slog.Info("ack ignored", "phase", c.phase, "had", c.reply.ack)
+			return
+		}
+		c.playAck(e.url)
+
+	case evAckPumped:
+		if !c.reply.ack || c.reply.stream == nil {
+			return
+		}
+		for _, chunk := range c.reply.pending {
+			if chunk == nil {
+				c.reply.stream.done()
+				break
+			}
+			c.reply.stream.send(chunk)
+		}
+		c.reply.pending = nil
 
 	case evEarlyFailed:
 		// Nothing was played, so the reply is still owed by the late copies: let them in again.
@@ -437,6 +472,9 @@ func (c *conversation) handle(e event) {
 		if c.reply.early || c.lateAPI {
 			c.lateAPIOpen = c.lateAPI
 			return
+		}
+		if c.reply.ack {
+			return // the ack already opened the reply stream; the pushed reply joins it
 		}
 		// The turn has to be claimed before the audio arrives: Home Assistant closes the run as soon
 		// as it has handed over the text, and a turn still only thinking would take that as the end
@@ -459,6 +497,10 @@ func (c *conversation) handle(e event) {
 		if wakeword.Delivery(c.slot) == config.DeliveryStream {
 			return
 		}
+		if c.reply.ack {
+			c.appendWhole(e.url) // after the ack, in the same stream
+			return
+		}
 		c.speak(e.url)
 
 	case evStreamAudio:
@@ -468,6 +510,10 @@ func (c *conversation) handle(e event) {
 		}
 		if c.phase != phaseReplying {
 			c.speak("")
+		}
+		if c.reply.ack && !closed(c.reply.ackDone) {
+			c.reply.pending = append(c.reply.pending, e.audio)
+			return
 		}
 		c.reply.stream.send(e.audio)
 
@@ -482,6 +528,10 @@ func (c *conversation) handle(e event) {
 		// Everything Home Assistant is going to send has been sent. What the errand is still holding
 		// back for the cushion plays, and it finishes once that has been heard.
 		if c.phase == phaseReplying && c.reply.stream != nil {
+			if c.reply.ack && !closed(c.reply.ackDone) {
+				c.reply.pending = append(c.reply.pending, nil) // nil marks the end, flushed after the ack
+				return
+			}
 			c.reply.stream.done()
 		}
 
@@ -777,11 +827,15 @@ func (c *conversation) speakEarly(url string) {
 	})
 }
 
-// stopEarly abandons an early fetch, if one is running.
+// stopEarly abandons an early fetch and an ack fetch, if either is running.
 func (c *conversation) stopEarly() {
 	if c.earlyCancel != nil {
 		c.earlyCancel()
 		c.earlyCancel = nil
+	}
+	if c.ackCancel != nil {
+		c.ackCancel()
+		c.ackCancel = nil
 	}
 }
 
