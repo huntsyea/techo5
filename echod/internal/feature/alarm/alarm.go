@@ -28,6 +28,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/remind"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/ring"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/timer"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/hook"
@@ -199,6 +200,7 @@ func build() *Alarms {
 	a.Changed.Listen(func(struct{}) { go a.publishState() })
 	remind.Get().Changed.Listen(func(struct{}) { go a.publishState() })
 	announce.Get().Changed.Listen(func(struct{}) { go a.publishState() })
+	voice.Get().AnnouncingChanged().Listen(func(struct{}) { go a.publishState() })
 	return a
 }
 
@@ -211,8 +213,9 @@ func (a *Alarms) publishState() {
 //
 //	!label            ringing now (first, when anything is)
 //	mwords            the reminder on the screen, up to 160 characters of it
-//	afrom|words       a house announcement on the screen (it shows for announce's own time; a
-//	                  screen times it out itself, since nothing is sent when it lapses)
+//	afrom|words       an announcement: from Home Assistant while it is being played (from
+//	                  "Home Assistant"), or a house one from another device while announce shows it.
+//	                  A screen holds the card itself; neither clears at a time worth waiting for.
 //	zUNIX|label       snoozed until then
 //	nUNIX|label       the next to go off
 //	rN                counts every change: read alarms_list again when it moves
@@ -235,6 +238,9 @@ func (a *Alarms) stateText(now time.Time, rev int64) string {
 	}
 	if r, ok := remind.Get().Showing(); ok {
 		out = append(out, "m"+cut(r.Label, 160))
+	}
+	if m, ok := voice.Get().Announcing(); ok {
+		out = append(out, "aHome Assistant|"+cut(m.Text, 160))
 	}
 	if m, ok := announce.Get().Showing(); ok && m.Kind == "" {
 		out = append(out, "a"+cut(m.From, 24)+"|"+cut(m.Text, 160))
