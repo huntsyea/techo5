@@ -2,6 +2,7 @@ package alarm
 
 import (
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -146,5 +147,16 @@ func TestAFoldedAlarmIsToldStoppedToo(t *testing.T) {
 	}
 	if n := (config.Alarms{SunriseMinutes: 20}).SunriseFor(config.Alarm{Silent: true}); n != 0 {
 		t.Errorf("a silent alarm brings %d minutes of light", n)
+	}
+}
+
+// An external screen reads what is ringing first and always gets the change count, so it knows to
+// read the list again.
+func TestTheStateLeadsWithTheRingAndEndsWithTheCount(t *testing.T) {
+	a := build()
+	a.ringing = &Ring{Label: "Wake|up"}
+	got := a.stateText(time.Now(), 7)
+	if !strings.HasPrefix(got, "!Wake up;") || !strings.HasSuffix(got, "r7") {
+		t.Errorf("state %q, want it to start !Wake up; and end r7", got)
 	}
 }

@@ -556,3 +556,28 @@ func TestWhatWasEndedHereIsLetGoOfWhenAnEventComes(t *testing.T) {
 		t.Errorf("still remembering %d timers ended here long ago", len(ts.ended))
 	}
 }
+
+// The detail an external screen reads: the device's own timer keeps its id so it can be canceled, Home
+// Assistant's shows "-", a running one carries when it is due and a paused one what is left.
+func TestTheDetailNamesEachTimerForAScreen(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	ts := build()
+	ts.held = map[string]*timer{
+		"local:a": {name: "eggs", total: 5 * time.Minute, left: 2 * time.Minute, at: now, active: true, local: true},
+		"ha1":     {name: "pas|ta", total: 10 * time.Minute, left: 4 * time.Minute, at: now, active: false},
+	}
+
+	want := "local:a|eggs|1800000120|300|a;-|pas ta|240|600|p"
+	if got := ts.detailText(now); got != want {
+		t.Errorf("detail %q, want %q", got, want)
+	}
+}
+
+// Whatever is ringing comes first, so a screen can tell before reading the rest.
+func TestTheDetailLeadsWithWhatIsRinging(t *testing.T) {
+	ts := build()
+	ts.stop, ts.rang = func() {}, "eggs"
+	if got := ts.detailText(time.Now()); got != "!eggs" {
+		t.Errorf("detail %q, want !eggs", got)
+	}
+}
