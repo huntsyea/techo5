@@ -201,6 +201,7 @@ func build() *Alarms {
 	remind.Get().Changed.Listen(func(struct{}) { go a.publishState() })
 	announce.Get().Changed.Listen(func(struct{}) { go a.publishState() })
 	voice.Get().AnnouncingChanged().Listen(func(struct{}) { go a.publishState() })
+	ring.MissedChanged.Listen(func(struct{}) { go a.publishState() })
 	return a
 }
 
@@ -218,6 +219,7 @@ func (a *Alarms) publishState() {
 //	                  A screen holds the card itself; neither clears at a time worth waiting for.
 //	zUNIX|label       snoozed until then
 //	nUNIX|label       the next to go off
+//	xUNIX|what|label  a ring that fell due and never sounded (ring.Missing), oldest first
 //	rN                counts every change: read alarms_list again when it moves
 //
 // Labels lose "|" and ";" and are cut to 24 characters; entries stop before Home Assistant's
@@ -250,6 +252,9 @@ func (a *Alarms) stateText(now time.Time, rev int64) string {
 	}
 	if v.Next != nil {
 		out = append(out, "n"+strconv.FormatInt(v.Next.At.Unix(), 10)+"|"+clean(v.Next.Label))
+	}
+	for _, m := range ring.Missing() {
+		out = append(out, "x"+strconv.FormatInt(m.Due.Unix(), 10)+"|"+m.What+"|"+clean(m.Label))
 	}
 	tail := "r" + strconv.FormatInt(rev, 10)
 	text := ""
