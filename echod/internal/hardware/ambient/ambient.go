@@ -81,6 +81,15 @@ func (s *Sensor) Start(context.Context) error {
 		return fmt.Errorf("ambient: %w", err)
 	}
 	s.dev = dev
+	// A steady room sends nothing, so after a restart there would be no reading until the light
+	// changed. The device keeps its last value, so start from that.
+	if info, err := dev.Abs(0); err == nil {
+		s.mu.Lock()
+		s.last, s.at = float64(info.Value), time.Now()
+		s.mu.Unlock()
+		slog.Info("light sensor on", "device", dev.Path, "period", period, "lux", info.Value)
+		return nil
+	}
 	slog.Info("light sensor on", "device", dev.Path, "period", period)
 	return nil
 }
