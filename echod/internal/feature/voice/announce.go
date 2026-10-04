@@ -16,6 +16,7 @@ import (
 // read loop: fetching and playing must not block it.
 func (t *conversation) announce(a esphome.Announce) {
 	slog.Info("announce", "text", a.Text, "start_conversation", a.StartConversation)
+	shown := air.begin(a.Text)
 
 	// One claim covers both urls, so silencing an announcement stops the whole thing rather than
 	// letting the second one start once the first has been drained.
@@ -35,6 +36,7 @@ func (t *conversation) announce(a esphome.Announce) {
 	safe.Go("announce", func() {
 		<-claim.Done()
 		t.player.Sounding(false)
+		air.end(shown)
 
 		if err := claim.Err(); err != nil {
 			slog.Error("playing the announcement failed", "err", err)
