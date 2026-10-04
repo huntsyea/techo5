@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -99,9 +100,14 @@ type Alarms struct {
 	// Changed fires when anything the screen shows changes; listeners must not block.
 	Changed hook.Hook[struct{}]
 
-	next   *esphome.TextSensor
-	stop   *esphome.Button
-	snooze *esphome.Button
+	next *esphome.TextSensor
+
+	// state is what a screen drawn by another program (an external UI) needs to follow the alarms;
+	// see stateText. stateRev counts changes, so that screen knows when to read alarms_list again.
+	state    *esphome.TextSensor
+	stateRev atomic.Int64
+	stop     *esphome.Button
+	snooze   *esphome.Button
 
 	// sun is the ring while the light before an alarm comes up, under a ringing alarm and over
 	// everything quieter; lighting is whether it is showing anything.
@@ -148,6 +154,8 @@ func Get() *Alarms {
 func build() *Alarms {
 	a := &Alarms{
 		next: &esphome.TextSensor{Base: esphome.Base{ObjectID: "next_alarm", Name: "Next alarm", Icon: "mdi:alarm"}},
+		state: &esphome.TextSensor{Base: esphome.Base{ObjectID: "alarms_state", Name: "Alarms state", Icon: "mdi:alarm-check",
+			Category: esphome.CategoryDiagnostic}},
 		sun:  led.Get().Claim(led.PriorityTimer),
 		wake: make(chan struct{}, 1),
 	}
@@ -186,13 +194,65 @@ func build() *Alarms {
 			a.poke()
 		}
 	})
+	// Emit can come with the lock held, so the state is worked out on its own goroutine.
+	a.Changed.Listen(func(struct{}) { go a.publishState() })
+	remind.Get().Changed.Listen(func(struct{}) { go a.publishState() })
 	return a
+}
+
+// publishState tells an external screen what changed.
+func (a *Alarms) publishState() {
+	a.state.Set(a.stateText(time.Now(), a.stateRev.Add(1)))
+}
+
+// stateText is the alarms for an external screen, as entries joined by ";":
+//
+//	!label            ringing now (first, when anything is)
+//	mwords            the reminder on the screen, up to 160 characters of it
+//	zUNIX|label       snoozed until then
+//	nUNIX|label       the next to go off
+//	rN                counts every change: read alarms_list again when it moves
+//
+// Labels lose "|" and ";" and are cut to 24 characters; entries stop before Home Assistant's
+// 255-character limit on a state, with the count always kept.
+func (a *Alarms) stateText(now time.Time, rev int64) string {
+	cut := func(s string, n int) string {
+		s = strings.NewReplacer("|", " ", ";", " ", "\n", " ").Replace(s)
+		if r := []rune(s); len(r) > n {
+			s = string(r[:n])
+		}
+		return s
+	}
+	clean := func(s string) string { return cut(s, 24) }
+	v := a.View(now)
+	var out []string
+	if v.Ringing != nil {
+		out = append(out, "!"+clean(cmp.Or(v.Ringing.Label, "Alarm")))
+	}
+	if r, ok := remind.Get().Showing(); ok {
+		out = append(out, "m"+cut(r.Label, 160))
+	}
+	for _, z := range v.Snoozed {
+		out = append(out, "z"+strconv.FormatInt(z.At.Unix(), 10)+"|"+clean(z.Label))
+	}
+	if v.Next != nil {
+		out = append(out, "n"+strconv.FormatInt(v.Next.At.Unix(), 10)+"|"+clean(v.Next.Label))
+	}
+	tail := "r" + strconv.FormatInt(rev, 10)
+	text := ""
+	for _, e := range out {
+		if len(text)+len(e)+len(tail)+2 > 255 {
+			break
+		}
+		text += e + ";"
+	}
+	return text + tail
 }
 
 func (a *Alarms) Name() string { return "alarms" }
 
 func (a *Alarms) Entities() []esphome.Entity {
-	return []esphome.Entity{a.next, a.stop, a.snooze, a.sound, a.snoozeFor, a.ringVol}
+	return []esphome.Entity{a.next, a.state, a.stop, a.snooze, a.sound, a.snoozeFor, a.ringVol}
 }
 
 func (a *Alarms) Restore(c config.Config) {
@@ -299,6 +359,7 @@ func (a *Alarms) poke() {
 
 // Run rings what comes due, looking at least every look and whenever something changes.
 func (a *Alarms) Run(ctx context.Context) error {
+	a.publishState() // an external screen starts from what is there, not from the first change
 	last := time.Now()
 	published := ""
 	looked, started, edited := false, time.Now(), false
@@ -905,6 +966,29 @@ func (a *Alarms) Actions() []*esphome.Action {
 					return nil, err
 				}
 				slog.Info("alarm deleted from home assistant", "id", id)
+				return nil, nil
+			},
+		},
+		{
+			// Turns an alarm set on the device on or off, keeping it: what a screen's switch does.
+			Name: "alarm_switch",
+			Args: []esphome.Arg{{Name: "id", Type: esphome.ArgString}, {Name: "on", Type: esphome.ArgString}},
+			Run: func(c esphome.Call) (any, error) {
+				id := strings.TrimSpace(c.String("id"))
+				on, err := strconv.ParseBool(strings.TrimSpace(c.String("on")))
+				if err != nil {
+					return nil, fmt.Errorf("alarms: on is true or false, not %q", c.String("on"))
+				}
+				i := slices.IndexFunc(config.Get().Alarms.List, func(al config.Alarm) bool { return al.ID == id })
+				if i < 0 {
+					return nil, fmt.Errorf("alarms: no alarm %q on this device", id)
+				}
+				al := config.Get().Alarms.List[i]
+				al.On = on
+				if err := a.Put(al); err != nil {
+					return nil, err
+				}
+				slog.Info("alarm switched from home assistant", "id", id, "on", on)
 				return nil, nil
 			},
 		},

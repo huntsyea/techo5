@@ -65,6 +65,10 @@ type Timers struct {
 	// the one place a timer of its own can still be watched.
 	names *esphome.TextSensor
 
+	// detail is the same table for a screen drawn by another program (an external UI): exact times,
+	// totals, which are the device's own and so cancelable, and what is ringing. See detailText.
+	detail *esphome.TextSensor
+
 	// woke is how a new timer restarts the redraw, which stops while there is nothing counting down.
 	woke chan struct{}
 
@@ -170,6 +174,14 @@ func build() *Timers {
 				Category: esphome.CategoryDiagnostic,
 			},
 		},
+		detail: &esphome.TextSensor{
+			Base: esphome.Base{
+				ObjectID: "timers_detail",
+				Name:     "Timers detail",
+				Icon:     "mdi:timer-cog-outline",
+				Category: esphome.CategoryDiagnostic,
+			},
+		},
 		woke: make(chan struct{}, 1),
 		held: map[string]*timer{},
 	}
@@ -177,7 +189,7 @@ func build() *Timers {
 
 func (t *Timers) Name() string { return "timers" }
 
-func (t *Timers) Entities() []esphome.Entity { return []esphome.Entity{t.names} }
+func (t *Timers) Entities() []esphome.Entity { return []esphome.Entity{t.names, t.detail} }
 
 // Actions let Home Assistant set and cancel the device's own timers, which run and ring here with Home
 // Assistant away. Its own timers, set by voice through Assist, are canceled the same way they were set.
@@ -519,7 +531,56 @@ func (t *Timers) Event(e esphome.TimerEvent) {
 
 // publish names what is counting down, soonest first. It follows the table rather than the clock, so
 // it does not send Home Assistant anything four times a second.
-func (t *Timers) publish() { t.names.Set(t.describe(time.Now())) }
+func (t *Timers) publish() {
+	now := time.Now()
+	t.names.Set(t.describe(now))
+	t.detail.Set(t.detailText(now))
+}
+
+// detailText is every timer for a screen to draw, soonest first, as entries joined by ";":
+//
+//	!name                          what is ringing now, first when anything is
+//	id|name|due|total|a            running: due in Unix seconds, total in seconds
+//	id|name|left|total|p           paused: left in seconds
+//
+// id is the timer's own for one of the device's (local:…, which timer_cancel takes) and "-" for Home
+// Assistant's. Names lose "|" and ";" and are cut to 24 characters, and entries stop before Home
+// Assistant's 255-character limit on a state.
+func (t *Timers) detailText(now time.Time) string {
+	clean := func(s string) string {
+		s = strings.NewReplacer("|", " ", ";", " ").Replace(s)
+		if r := []rune(s); len(r) > 24 {
+			s = string(r[:24])
+		}
+		return s
+	}
+	var out []string
+	if name, ringing := t.RingingName(); ringing {
+		out = append(out, "!"+clean(cmp.Or(name, "Timer")))
+	}
+	for _, c := range t.List(now) {
+		id := "-"
+		if c.Local {
+			id = c.ID
+		}
+		when, state := strconv.FormatInt(now.Add(c.Left).Unix(), 10), "a"
+		if !c.Active {
+			when, state = strconv.Itoa(int(c.Left.Seconds())), "p"
+		}
+		out = append(out, strings.Join([]string{id, clean(c.Name), when, strconv.Itoa(int(c.Total.Seconds())), state}, "|"))
+	}
+	text := ""
+	for _, e := range out {
+		if len(text)+len(e)+1 > 255 {
+			break
+		}
+		if text != "" {
+			text += ";"
+		}
+		text += e
+	}
+	return text
+}
 
 // describe is what Home Assistant is told is counting down: each timer by name and what is left of it,
 // soonest first. A name on its own does not say whether it is the timer somebody is waiting on, and a
@@ -658,6 +719,7 @@ func (t *Timers) startRinging(name string) {
 	}
 	t.rang = name
 	t.stop = ring.Start("timer", speaker.TimerSound(), t.rungOut)
+	go t.publish() // after the lock is let go: publish takes it
 }
 
 // rungOut is the bell telling the timers their ring is over, however that came about.
@@ -665,6 +727,7 @@ func (t *Timers) rungOut() {
 	t.mu.Lock()
 	t.stop, t.rang = nil, ""
 	t.mu.Unlock()
+	t.publish()
 	t.show()
 	t.Changed.Emit(struct{}{})
 }
