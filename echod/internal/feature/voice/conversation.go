@@ -201,6 +201,10 @@ type conversation struct {
 	// shown is what a screen is told: the phase and the words so far. Reset when a turn opens, so a
 	// new turn never shows the last one's answer.
 	shown State
+
+	// audible says the reply's first audio has been queued. Until then a reply is still being
+	// synthesized, and a screen is told the turn is thinking, not replying (enter).
+	audible bool
 }
 
 // graceStart is how long to wait for a stopped run to close before starting the next one anyway.
@@ -408,7 +412,9 @@ func (c *conversation) handle(e event) {
 		}
 
 	case evReplyText:
-		slog.Info("replying", "slot", c.slot+1, "text", e.text)
+		// The words arrive before any of their audio: the screen gets them now, and the reply face
+		// once the first of the audio is queued (evPlaying).
+		slog.Info("reply text", "slot", c.slot+1, "text", e.text)
 		c.log.Replied(e.text)
 		c.turn.Replying(e.text)
 		c.shown.Reply = e.text
@@ -567,6 +573,12 @@ func (c *conversation) handle(e event) {
 
 	case evPlaying:
 		c.disarm()
+		if c.phase == phaseReplying && !c.audible {
+			c.audible = true
+			slog.Info("replying", "slot", c.slot+1)
+			c.publish()
+			c.showPhase(wakeword.ReplyingEffect(c.slot))
+		}
 
 	case evError:
 		// Two devices in earshot both hear the wake word and both start a turn. Home Assistant keeps the
@@ -766,11 +778,16 @@ func (c *conversation) think() {
 // still downloading is abandoned rather than arriving to play into a canceled turn, and a stream
 // still receiving stops taking chunks.
 func (c *conversation) speak(url string) {
+	was := c.phase
 	c.stopStreaming()
 	c.enter(phaseReplying)
 	c.reply = reply{url: url}
 
-	c.showPhase(wakeword.ReplyingEffect(c.slot))
+	// The ring's reply animation waits for the reply's audio, as the screen does (evPlaying). Until
+	// then it shows thinking, which a turn that skipped straight from listening has not shown yet.
+	if was == phaseListening {
+		c.showPhase(wakeword.ThinkingEffect(c.slot))
+	}
 	c.player.Sounding(true)
 
 	// The deadline is left as it was. Text arriving is not the pipeline delivering: it still owes the
@@ -786,19 +803,22 @@ func (c *conversation) speak(url string) {
 	}
 
 	held := c.sound.ClaimSpeech("reply", errand)
+	slot := c.slot
 	safe.Go("reply", func() {
 		<-held.Done()
 
+		// A stopped reply (canceled, interrupted) fails its fetch because it was stopped, which says
+		// nothing about the url: it ends here, and the slot keeps its delivery.
+		if held.Stopped() {
+			return
+		}
 		if err := held.Err(); err != nil {
 			slog.Error("playing the reply failed", "url", url, "err", err)
 			// A url that cannot be fetched would be silence every turn; the streamed copy arrives
 			// over the connection the device already has.
 			if url != "" {
-				wakeword.Get().FallBackToStream(c.slot)
+				wakeword.Get().FallBackToStream(slot)
 			}
-		}
-		if held.Stopped() {
-			return
 		}
 		c.post(event{kind: evPlayed, at: held.Quiet()})
 	})
@@ -888,7 +908,24 @@ func (c *conversation) showPhase(override string) {
 func (c *conversation) enter(p phase) {
 	c.phase = p
 	c.visible.Store(int32(p))
-	c.shown.Phase = p.String()
+	if p != phaseReplying {
+		c.audible = false
+	}
+	// A reply nobody can hear yet still looks like thinking, so moving to it says nothing new.
+	if p == phaseReplying && !c.audible && c.shown.Phase == phaseThinking.String() {
+		return
+	}
+	c.publish()
+}
+
+// publish tells a screen the phase it should show: replying only once the reply is audible, which
+// can be seconds after the turn moved to playing it (speech synthesis is slow on the mini).
+func (c *conversation) publish() {
+	shown := c.phase
+	if shown == phaseReplying && !c.audible {
+		shown = phaseThinking
+	}
+	c.shown.Phase = shown.String()
 	Changed.Emit(c.shown)
 }
 

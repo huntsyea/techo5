@@ -20,6 +20,7 @@ var registered = []string{
 	"alarm_snooze_length",
 	"alarm_sound",
 	"alarms_state",
+	"assistant_phase",
 	"alarm_stop",
 	"bass",
 	"ble_advertisements",
