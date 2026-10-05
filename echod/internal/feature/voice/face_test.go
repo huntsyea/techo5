@@ -12,6 +12,7 @@ import (
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/config"
+	"github.com/HuskerMinion/techo5/echod/internal/feature/wakeword"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
 )
@@ -163,14 +164,13 @@ func TestPushedAudioBringsTheReplyFace(t *testing.T) {
 }
 
 // Canceling while the reply is still being synthesized ends the turn as it always has, and the reply
-// that turns up afterwards brings no reply face. (The reply here is opened by the ack: canceling a
-// whole-file fetch also moves the slot to streamed delivery, from a goroutine that outlives the test.)
+// that turns up afterwards brings no reply face.
 func TestCancelWhileThinking(t *testing.T) {
 	f := newFaceTurn(t)
 	url, release := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evAck, url: url})
+	f.c.handle(event{kind: evReplyURL, url: url})
 	f.settle(100 * time.Millisecond)
 	f.c.handle(event{kind: evCancel})
 
@@ -251,5 +251,22 @@ func TestRingRepliesWithTheAudio(t *testing.T) {
 	f.until("replying")
 	if got := f.c.claim.Showing().Effect; got != "test-replying" {
 		t.Fatalf("with the reply audible the ring shows %q, want the replying animation", got)
+	}
+}
+
+// Canceling a whole-file reply while it is still downloading is a deliberate stop, not the url
+// failing: the slot keeps fetching its replies whole.
+func TestCancelDuringWholeFileKeepsDelivery(t *testing.T) {
+	f := newFaceTurn(t)
+	url, _ := heldSpeech(t)
+
+	f.c.handle(event{kind: evReplyText, text: "It's noon."})
+	f.c.handle(event{kind: evReplyURL, url: url})
+	f.settle(100 * time.Millisecond)
+	f.c.handle(event{kind: evCancel})
+	f.settle(300 * time.Millisecond)
+
+	if got := wakeword.Delivery(0); got != config.DeliveryWhole {
+		t.Fatalf("after a cancel the slot's delivery is %q, want %q", got, config.DeliveryWhole)
 	}
 }

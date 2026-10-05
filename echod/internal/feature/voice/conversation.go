@@ -803,19 +803,22 @@ func (c *conversation) speak(url string) {
 	}
 
 	held := c.sound.ClaimSpeech("reply", errand)
+	slot := c.slot
 	safe.Go("reply", func() {
 		<-held.Done()
 
+		// A stopped reply (canceled, interrupted) fails its fetch because it was stopped, which says
+		// nothing about the url: it ends here, and the slot keeps its delivery.
+		if held.Stopped() {
+			return
+		}
 		if err := held.Err(); err != nil {
 			slog.Error("playing the reply failed", "url", url, "err", err)
 			// A url that cannot be fetched would be silence every turn; the streamed copy arrives
 			// over the connection the device already has.
 			if url != "" {
-				wakeword.Get().FallBackToStream(c.slot)
+				wakeword.Get().FallBackToStream(slot)
 			}
-		}
-		if held.Stopped() {
-			return
 		}
 		c.post(event{kind: evPlayed, at: held.Quiet()})
 	})
