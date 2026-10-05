@@ -495,6 +495,10 @@ func (c *Claim) live() bool {
 	return !c.released && !c.content.empty()
 }
 
+// Showing is what the claim has put on the ring, empty when nothing (or when it is released). It is
+// the claim's own content, whether or not something above it is covering it.
+func (c *Claim) Showing() Content { return c.get() }
+
 func (c *Claim) get() Content {
 	c.mu.Lock()
 	defer c.mu.Unlock()

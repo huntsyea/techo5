@@ -28,9 +28,12 @@ type faceTurn struct {
 	seen []State
 }
 
-func newFaceTurn(t *testing.T) *faceTurn {
+func newFaceTurn(t *testing.T, setup ...func()) *faceTurn {
 	t.Helper()
 	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	for _, fn := range setup {
+		fn()
+	}
 	c := newConversation(&esphome.VoiceSatellite{})
 	c.claim = c.leds.Claim(led.PriorityTurn)
 	f := &faceTurn{t: t, c: c}
@@ -160,13 +163,14 @@ func TestPushedAudioBringsTheReplyFace(t *testing.T) {
 }
 
 // Canceling while the reply is still being synthesized ends the turn as it always has, and the reply
-// that turns up afterwards brings no reply face.
+// that turns up afterwards brings no reply face. (The reply here is opened by the ack: canceling a
+// whole-file fetch also moves the slot to streamed delivery, from a goroutine that outlives the test.)
 func TestCancelWhileThinking(t *testing.T) {
 	f := newFaceTurn(t)
 	url, release := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
+	f.c.handle(event{kind: evAck, url: url})
 	f.settle(100 * time.Millisecond)
 	f.c.handle(event{kind: evCancel})
 
@@ -179,5 +183,73 @@ func TestCancelWhileThinking(t *testing.T) {
 		if s.Phase == "replying" {
 			t.Fatal("the canceled reply brought the reply face")
 		}
+	}
+}
+
+// The assistant phase sensor is how a screen drawn by another program follows the same faces: it
+// says what voice.Changed says, so it waits for the reply's audio exactly as the screen does.
+func TestAssistantPhaseFollowsTheFace(t *testing.T) {
+	p := newPhaseSensor()
+	t.Cleanup(p.stop)
+	if got := p.entity.Get(); got != "idle" {
+		t.Fatalf("before any turn the sensor says %q, want idle", got)
+	}
+	if p.entity.ObjectID != "assistant_phase" || p.entity.Name != "Assistant phase" {
+		t.Errorf("the sensor is %q (%q)", p.entity.ObjectID, p.entity.Name)
+	}
+
+	f := newFaceTurn(t)
+	url, release := heldSpeech(t)
+	f.c.handle(event{kind: evReplyText, text: "It's noon."})
+	f.c.handle(event{kind: evReplyURL, url: url})
+	f.settle(100 * time.Millisecond)
+	if got := p.entity.Get(); got != "thinking" {
+		t.Fatalf("with no reply audio yet the sensor says %q, want thinking", got)
+	}
+
+	close(release)
+	f.until("replying")
+	// The phase and nothing else: the Spot never shows what was heard or said.
+	seen := map[string]bool{"idle": true, "listening": true, "thinking": true, "replying": true}
+	if got := p.entity.Get(); !seen[got] {
+		t.Fatalf("the sensor carries %q, which is not a phase", got)
+	}
+	deadline := time.Now().Add(time.Second)
+	for p.entity.Get() != "replying" {
+		if time.Now().After(deadline) {
+			t.Fatalf("the screen shows replying and the sensor says %q", p.entity.Get())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// The ring's reply animation starts with the reply's audio, as the screen's reply face does; until
+// then the ring goes on showing the thinking animation.
+func TestRingRepliesWithTheAudio(t *testing.T) {
+	f := newFaceTurn(t, func() {
+		w := config.Set().Wake(0)
+		if err := w.ThinkingEffect("test-thinking"); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.ReplyingEffect("test-replying"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := f.c.claim.Showing().Effect; got != "test-thinking" {
+		t.Fatalf("thinking, the ring shows %q", got)
+	}
+	url, release := heldSpeech(t)
+
+	f.c.handle(event{kind: evReplyText, text: "It's noon."})
+	f.c.handle(event{kind: evReplyURL, url: url})
+	f.settle(100 * time.Millisecond)
+	if got := f.c.claim.Showing().Effect; got != "test-thinking" {
+		t.Fatalf("with no reply audio yet the ring shows %q, want the thinking animation", got)
+	}
+
+	close(release)
+	f.until("replying")
+	if got := f.c.claim.Showing().Effect; got != "test-replying" {
+		t.Fatalf("with the reply audible the ring shows %q, want the replying animation", got)
 	}
 }

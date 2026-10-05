@@ -41,8 +41,9 @@ const Features = esphome.DefaultVoiceFeatures |
 	esphome.FeatureTimers
 
 type Voice struct {
-	vs   *esphome.VoiceSatellite
-	turn *conversation
+	vs    *esphome.VoiceSatellite
+	turn  *conversation
+	phase *phaseSensor
 }
 
 var (
@@ -98,6 +99,7 @@ func build() *Voice {
 		},
 	}
 	v.turn = newConversation(v.vs)
+	v.phase = newPhaseSensor()
 	slog.Info("wake words", "ours", len(ours), "active", active)
 
 	v.vs.OnTimer = timer.Get().Event
@@ -138,6 +140,10 @@ func build() *Voice {
 }
 
 func (v *Voice) Name() string { return "conversation" }
+
+// Entities is the assistant phase sensor (phase.go). The satellite itself is not an entity: Home
+// Assistant finds it from the device's voice features.
+func (v *Voice) Entities() []esphome.Entity { return []esphome.Entity{v.phase.entity} }
 
 // Handle is the satellite's own protocol messages, which have no entity to arrive through.
 func (v *Voice) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) error {

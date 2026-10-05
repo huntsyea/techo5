@@ -577,6 +577,7 @@ func (c *conversation) handle(e event) {
 			c.audible = true
 			slog.Info("replying", "slot", c.slot+1)
 			c.publish()
+			c.showPhase(wakeword.ReplyingEffect(c.slot))
 		}
 
 	case evError:
@@ -777,11 +778,16 @@ func (c *conversation) think() {
 // still downloading is abandoned rather than arriving to play into a canceled turn, and a stream
 // still receiving stops taking chunks.
 func (c *conversation) speak(url string) {
+	was := c.phase
 	c.stopStreaming()
 	c.enter(phaseReplying)
 	c.reply = reply{url: url}
 
-	c.showPhase(wakeword.ReplyingEffect(c.slot))
+	// The ring's reply animation waits for the reply's audio, as the screen does (evPlaying). Until
+	// then it shows thinking, which a turn that skipped straight from listening has not shown yet.
+	if was == phaseListening {
+		c.showPhase(wakeword.ThinkingEffect(c.slot))
+	}
 	c.player.Sounding(true)
 
 	// The deadline is left as it was. Text arriving is not the pipeline delivering: it still owes the
