@@ -270,3 +270,45 @@ func TestCancelDuringWholeFileKeepsDelivery(t *testing.T) {
 		t.Fatalf("after a cancel the slot's delivery is %q, want %q", got, config.DeliveryWhole)
 	}
 }
+
+// next handles posted events until one of kind arrives, and returns that one unhandled.
+func (f *faceTurn) next(kind eventKind) event {
+	f.t.Helper()
+	end := time.After(5 * time.Second)
+	for {
+		select {
+		case e := <-f.c.events:
+			if e.kind == kind {
+				return e
+			}
+			f.c.handle(e)
+		case <-end:
+			f.t.Fatalf("no event of kind %d arrived", kind)
+		}
+	}
+}
+
+// A reply that was stopped after its audio was queued can still have its evPlaying waiting in the
+// loop. Handled during the next turn, it must not show that turn's reply face before its own audio.
+func TestLatePlayingFromAStoppedReplyKeepsTheNextTurnThinking(t *testing.T) {
+	f := newFaceTurn(t)
+	first, release := heldSpeech(t)
+	f.c.handle(event{kind: evReplyText, text: "It's noon."})
+	f.c.handle(event{kind: evReplyURL, url: first})
+	close(release)
+	late := f.next(evPlaying) // the first reply's audio is queued; the loop hasn't seen it yet
+
+	f.c.handle(event{kind: evCancel})
+	f.c.think() // the next turn, its reply still being synthesized
+	second, _ := heldSpeech(t)
+	f.c.handle(event{kind: evReplyText, text: "It's one."})
+	f.c.handle(event{kind: evReplyURL, url: second})
+
+	f.c.handle(late)
+	if got := f.screen(); got != "thinking" {
+		t.Fatalf("the stopped reply's audio moved the next turn's screen to %q", got)
+	}
+	if f.c.audible {
+		t.Fatal("the stopped reply's audio marked the next turn's reply audible")
+	}
+}
