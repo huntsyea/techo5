@@ -1,8 +1,6 @@
 package voice
 
 import (
-	"bytes"
-	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +13,7 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/feature/wakeword"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/led"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/speaker"
+	"github.com/HuskerMinion/techo5/echod/internal/lib/audio"
 )
 
 // The reply face is what the screen shows while the answer is heard. Home Assistant hands over the
@@ -88,21 +87,7 @@ func (f *faceTurn) until(phase string) {
 func heldSpeech(t *testing.T) (url string, release chan struct{}) {
 	t.Helper()
 	release = make(chan struct{})
-	pcm := make([]byte, speaker.VoiceRate*2)
-	var b bytes.Buffer
-	b.WriteString("RIFF")
-	binary.Write(&b, binary.LittleEndian, uint32(36+len(pcm)))
-	b.WriteString("WAVEfmt ")
-	binary.Write(&b, binary.LittleEndian, uint32(16))
-	binary.Write(&b, binary.LittleEndian, uint16(1))
-	binary.Write(&b, binary.LittleEndian, uint16(1))
-	binary.Write(&b, binary.LittleEndian, uint32(speaker.VoiceRate))
-	binary.Write(&b, binary.LittleEndian, uint32(speaker.VoiceRate*2))
-	binary.Write(&b, binary.LittleEndian, uint16(2))
-	binary.Write(&b, binary.LittleEndian, uint16(16))
-	b.WriteString("data")
-	binary.Write(&b, binary.LittleEndian, uint32(len(pcm)))
-	b.Write(pcm)
+	wav := audio.WAV(make([]byte, speaker.VoiceRate*2), speaker.VoiceRate, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-release:
@@ -110,7 +95,7 @@ func heldSpeech(t *testing.T) (url string, release chan struct{}) {
 			return
 		}
 		w.Header().Set("Content-Type", "audio/wav")
-		w.Write(b.Bytes())
+		w.Write(wav)
 	}))
 	t.Cleanup(func() { srv.CloseClientConnections(); srv.Close() })
 	return srv.URL + "/reply.wav", release
