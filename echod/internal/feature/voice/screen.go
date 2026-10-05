@@ -6,8 +6,11 @@ import "github.com/HuskerMinion/techo5/echod/internal/lib/hook"
 // what a screen shows — "Listening…", then what was heard, then the answer — and it is a hook
 // rather than a query because a screen wants to redraw the moment something changes, not poll.
 //
-// Phase is the conversation's own name for it: idle, listening, thinking, replying. Heard and Reply
-// are kept through the idle that follows a turn, so whoever shows them can let them linger.
+// Phase is the conversation's own name for it: idle, listening, thinking, replying. Replying starts
+// with the reply's first audio (the holding phrase, or the answer however it arrives), not with its
+// text: speech synthesis can take seconds, and until it has produced something to hear the turn is
+// shown thinking. Reply carries the text as soon as it arrives. Heard and Reply are kept through the
+// idle that follows a turn, so whoever shows them can let them linger.
 type State struct {
 	Phase string
 	Heard string
