@@ -127,7 +127,9 @@ type Display struct {
 	callBtn *esphome.Switch
 	// weatherFx is the weather page's sky moving, on or off (weatherfx.go).
 	weatherFx *esphome.Switch
-	lang      *esphome.Select
+	// muteRing is the muted ring drawn thin and dim, on or off (mutering_spot.go).
+	muteRing *esphome.Switch
+	lang     *esphome.Select
 
 	mu      sync.Mutex
 	on      bool
@@ -281,6 +283,7 @@ func build() *Display {
 	d.turnStyle = turnStyleSelect(d.wake)
 	d.callBtn = callButtonSwitch(d.wake)
 	d.weatherFx = weatherAnimationSwitch(d.wake)
+	d.muteRing = muteRingSwitch(d.wake)
 	d.lang = langSelect()
 	voice.Changed.Listen(d.changed)
 	media.Get().OnVolume.Listen(d.volumeMoved)
@@ -325,7 +328,7 @@ func (d *Display) Name() string { return "screen" }
 func (d *Display) turnStyleSel() *esphome.Select { return d.turnStyle }
 
 func (d *Display) Entities() []esphome.Entity {
-	return []esphome.Entity{d.light, d.auto, d.clock, d.clockStyleSel, d.camTime, d.answerTime, d.turnStyle, d.callBtn, d.weatherFx, d.lang}
+	return []esphome.Entity{d.light, d.auto, d.clock, d.clockStyleSel, d.camTime, d.answerTime, d.turnStyle, d.callBtn, d.weatherFx, d.muteRing, d.lang}
 }
 
 // Restore lights the panel the way it was left.
@@ -337,6 +340,7 @@ func (d *Display) Restore(c config.Config) {
 	d.turnStyle.Set(turnStyles[turnStyleIndex()].label)
 	setCallButton(d.callBtn, c.Screen.CallButton)
 	setWeatherAnimation(d.weatherFx, !c.Screen.WeatherStill)
+	setMuteRingSubtle(d.muteRing, c.Screen.MuteRingSubtle)
 	d.setAuto(c.Screen.Auto, false)
 	d.apply(c.Screen.On, c.Screen.Brightness, false)
 }
@@ -1168,6 +1172,7 @@ func (d *Display) frame() time.Duration {
 		s.eq.wave = waveOn()
 	}
 	s.muted, _ = mute.Get().Muted()
+	s.mutedSubtle = muteRingSubtle.Load()
 	// A stream this player is carrying is the room's when it is what is being heard: the face names it,
 	// and says what it is doing, though the audio never passes through this player's own stream. Both,
 	// not just playing: the face tests paused first, so a station left paused underneath would label

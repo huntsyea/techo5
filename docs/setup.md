@@ -162,6 +162,8 @@ All of these are on the Show, under Settings → **Display**, and are entities i
 - **Theme**, **Answer time** and **Now playing** (the full page, or a strip over the clock).
 - **Turn screen**: how a voice request looks. **Classic** is the words, **Wave** is glowing lines and
   **Bars** is an LED-style equalizer, both moving with the voice. This one is on the Spot too.
+- **Subtle mute ring** (Spot, in Home Assistant): the red ring shown while the microphones are muted
+  is drawn thin and in a dimmer red, so it doesn't light up a dark room.
 
 ## 7. Voice
 
