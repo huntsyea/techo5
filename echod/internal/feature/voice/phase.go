@@ -1,6 +1,8 @@
 package voice
 
 import (
+	"sync"
+
 	esphome "github.com/ygelfand/go-esphome-device"
 
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
@@ -24,6 +26,7 @@ type phaseSensor struct {
 	latest chan string
 	quit   chan struct{}
 	cancel func()
+	once   sync.Once
 }
 
 func newPhaseSensor() *phaseSensor {
@@ -67,8 +70,11 @@ func (p *phaseSensor) run() {
 	}
 }
 
-// stop stops following the phase. Only tests need it: the device's sensor lasts as long as echod.
+// stop stops following the phase; calling it again does nothing. Only tests need it: the device's
+// sensor lasts as long as echod.
 func (p *phaseSensor) stop() {
-	p.cancel()
-	close(p.quit)
+	p.once.Do(func() {
+		p.cancel()
+		close(p.quit)
+	})
 }

@@ -312,3 +312,10 @@ func TestLatePlayingFromAStoppedReplyKeepsTheNextTurnThinking(t *testing.T) {
 		t.Fatal("the stopped reply's audio marked the next turn's reply audible")
 	}
 }
+
+// Stopping the phase sensor twice is harmless.
+func TestPhaseSensorStopsTwice(t *testing.T) {
+	p := newPhaseSensor()
+	p.stop()
+	p.stop()
+}
