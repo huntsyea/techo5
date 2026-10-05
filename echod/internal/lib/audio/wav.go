@@ -9,13 +9,12 @@ import (
 
 // WriteWAV writes 16-bit little-endian PCM as a RIFF/WAVE file.
 func WriteWAV(path string, pcm []byte, rate, channels int) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
+	return os.WriteFile(path, WAV(pcm, rate, channels), 0o666)
+}
 
-	var h []byte
+// WAV is 16-bit little-endian PCM as a RIFF/WAVE file: the canonical 44-byte header, then pcm.
+func WAV(pcm []byte, rate, channels int) []byte {
+	h := make([]byte, 0, 44+len(pcm))
 	u32 := func(v uint32) { h = binary.LittleEndian.AppendUint32(h, v) }
 	u16 := func(v uint16) { h = binary.LittleEndian.AppendUint16(h, v) }
 
@@ -33,12 +32,7 @@ func WriteWAV(path string, pcm []byte, rate, channels int) error {
 	u16(16)
 	h = append(h, "data"...)
 	u32(uint32(len(pcm)))
-
-	if _, err := f.Write(h); err != nil {
-		return err
-	}
-	_, err = f.Write(pcm)
-	return err
+	return append(h, pcm...)
 }
 
 // Tone renders a mono sine as 16-bit PCM. amplitude is relative to full scale.

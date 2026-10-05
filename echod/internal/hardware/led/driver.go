@@ -496,7 +496,8 @@ func (c *Claim) live() bool {
 }
 
 // Showing is what the claim has put on the ring, empty when nothing (or when it is released). It is
-// the claim's own content, whether or not something above it is covering it.
+// the claim's own content, whether or not something above it is covering it. Only tests use it, to
+// see what a feature put on the ring; nothing on the device should decide by reading it back.
 func (c *Claim) Showing() Content { return c.get() }
 
 func (c *Claim) get() Content {

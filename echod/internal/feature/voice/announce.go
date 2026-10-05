@@ -26,7 +26,7 @@ func (t *conversation) announce(a esphome.Announce) {
 			if url == "" {
 				continue
 			}
-			if err := t.play(ctx, url); err != nil {
+			if err := t.play(ctx, url, nil); err != nil {
 				return err
 			}
 		}
@@ -55,7 +55,8 @@ func (t *conversation) announce(a esphome.Announce) {
 
 // play fetches audio and queues it. Home Assistant serves it converted to media.Formats. Waiting
 // for it to be heard is the driver's, not ours: this returns as soon as it has been handed over.
-func (t *conversation) play(ctx context.Context, url string) error {
+// playing, if set, is called just before the audio is queued (a reply's evPlaying).
+func (t *conversation) play(ctx context.Context, url string, playing func()) error {
 	samples, err := media.Fetch(ctx, url)
 	if err != nil {
 		return err
@@ -68,7 +69,9 @@ func (t *conversation) play(ctx context.Context, url string) error {
 	}
 	slog.Info("playing announcement", "samples", len(samples))
 
-	t.post(event{kind: evPlaying})
+	if playing != nil {
+		playing()
+	}
 	t.speaker.PlayVoice(samples)
 	t.speaker.PlayVoice(make([]int16, speaker.VoiceRate*media.Tail/1000))
 	return nil
