@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,8 +56,9 @@ func (f *faceTurn) screen() string {
 	return f.seen[len(f.seen)-1].Phase
 }
 
-// settle handles what the turn posts to itself for a while, as the loop would.
-func (f *faceTurn) settle(d time.Duration) {
+// handleFor handles what the turn posts to itself for a while, as the loop would. Only for showing
+// that something does not happen; anything that does is waited for with fetched or until.
+func (f *faceTurn) handleFor(d time.Duration) {
 	end := time.After(d)
 	for {
 		select {
@@ -64,6 +66,22 @@ func (f *faceTurn) settle(d time.Duration) {
 			f.c.handle(e)
 		case <-end:
 			return
+		}
+	}
+}
+
+// fetched handles posted events until the reply's fetch has reached the server, or fails the test.
+func (f *faceTurn) fetched(s speech) {
+	f.t.Helper()
+	end := time.After(5 * time.Second)
+	for {
+		select {
+		case <-s.asked:
+			return
+		case e := <-f.c.events:
+			f.c.handle(e)
+		case <-end:
+			f.t.Fatal("the reply was never fetched")
 		}
 	}
 }
@@ -82,15 +100,25 @@ func (f *faceTurn) until(phase string) {
 	}
 }
 
+// speech is a reply's audio being synthesized: asked closes once it has been requested, and it is
+// served once release is closed.
+type speech struct {
+	url     string
+	release chan struct{}
+	asked   chan struct{}
+}
+
 // heldSpeech serves a second of speech as a whole WAVE file, but only once release is closed: until
 // then it is Home Assistant still synthesizing it.
-func heldSpeech(t *testing.T) (url string, release chan struct{}) {
+func heldSpeech(t *testing.T) speech {
 	t.Helper()
-	release = make(chan struct{})
+	s := speech{release: make(chan struct{}), asked: make(chan struct{})}
+	var once sync.Once
 	wav := audio.WAV(make([]byte, speaker.VoiceRate*2), speaker.VoiceRate, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		once.Do(func() { close(s.asked) })
 		select {
-		case <-release:
+		case <-s.release:
 		case <-r.Context().Done():
 			return
 		}
@@ -98,16 +126,17 @@ func heldSpeech(t *testing.T) (url string, release chan struct{}) {
 		w.Write(wav)
 	}))
 	t.Cleanup(func() { srv.CloseClientConnections(); srv.Close() })
-	return srv.URL + "/reply.wav", release
+	s.url = srv.URL + "/reply.wav"
+	return s
 }
 
 func TestReplyTextAndURLKeepThinking(t *testing.T) {
 	f := newFaceTurn(t)
-	url, release := heldSpeech(t)
+	reply := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
-	f.settle(200 * time.Millisecond)
+	f.c.handle(event{kind: evReplyURL, url: reply.url})
+	f.fetched(reply)
 
 	if got := f.screen(); got != "thinking" {
 		t.Fatalf("with no reply audio yet the screen shows %q, want thinking", got)
@@ -116,7 +145,7 @@ func TestReplyTextAndURLKeepThinking(t *testing.T) {
 		t.Errorf("the reply's text is not available while thinking: %q", got)
 	}
 
-	close(release)
+	close(reply.release)
 	f.until("replying")
 }
 
@@ -124,15 +153,15 @@ func TestReplyTextAndURLKeepThinking(t *testing.T) {
 // not the play_ack asking for it.
 func TestAckAudioBringsTheReplyFace(t *testing.T) {
 	f := newFaceTurn(t)
-	url, release := heldSpeech(t)
+	reply := heldSpeech(t)
 
-	f.c.handle(event{kind: evAck, url: url})
-	f.settle(200 * time.Millisecond)
+	f.c.handle(event{kind: evAck, url: reply.url})
+	f.fetched(reply)
 	if got := f.screen(); got != "thinking" {
 		t.Fatalf("with the ack still being synthesized the screen shows %q, want thinking", got)
 	}
 
-	close(release)
+	close(reply.release)
 	f.until("replying")
 }
 
@@ -152,18 +181,18 @@ func TestPushedAudioBringsTheReplyFace(t *testing.T) {
 // that turns up afterwards brings no reply face.
 func TestCancelWhileThinking(t *testing.T) {
 	f := newFaceTurn(t)
-	url, release := heldSpeech(t)
+	reply := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
-	f.settle(100 * time.Millisecond)
+	f.c.handle(event{kind: evReplyURL, url: reply.url})
+	f.fetched(reply)
 	f.c.handle(event{kind: evCancel})
 
 	if f.c.Phase() != phaseIdle || f.screen() != "idle" {
 		t.Fatalf("after cancel the turn is %v and the screen shows %q", f.c.Phase(), f.screen())
 	}
-	close(release)
-	f.settle(300 * time.Millisecond)
+	close(reply.release)
+	f.handleFor(300 * time.Millisecond)
 	for _, s := range f.seen {
 		if s.Phase == "replying" {
 			t.Fatal("the canceled reply brought the reply face")
@@ -184,19 +213,19 @@ func TestAssistantPhaseFollowsTheFace(t *testing.T) {
 	}
 
 	f := newFaceTurn(t)
-	url, release := heldSpeech(t)
+	reply := heldSpeech(t)
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
-	f.settle(100 * time.Millisecond)
+	f.c.handle(event{kind: evReplyURL, url: reply.url})
+	f.fetched(reply)
 	if got := p.entity.Get(); got != "thinking" {
 		t.Fatalf("with no reply audio yet the sensor says %q, want thinking", got)
 	}
 
-	close(release)
+	close(reply.release)
 	f.until("replying")
 	// The phase and nothing else: the Spot never shows what was heard or said.
-	seen := map[string]bool{"idle": true, "listening": true, "thinking": true, "replying": true}
-	if got := p.entity.Get(); !seen[got] {
+	phases := map[string]bool{"idle": true, "listening": true, "thinking": true, "replying": true}
+	if got := p.entity.Get(); !phases[got] {
 		t.Fatalf("the sensor carries %q, which is not a phase", got)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -223,16 +252,16 @@ func TestRingRepliesWithTheAudio(t *testing.T) {
 	if got := f.c.claim.Showing().Effect; got != "test-thinking" {
 		t.Fatalf("thinking, the ring shows %q", got)
 	}
-	url, release := heldSpeech(t)
+	reply := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
-	f.settle(100 * time.Millisecond)
+	f.c.handle(event{kind: evReplyURL, url: reply.url})
+	f.fetched(reply)
 	if got := f.c.claim.Showing().Effect; got != "test-thinking" {
 		t.Fatalf("with no reply audio yet the ring shows %q, want the thinking animation", got)
 	}
 
-	close(release)
+	close(reply.release)
 	f.until("replying")
 	if got := f.c.claim.Showing().Effect; got != "test-replying" {
 		t.Fatalf("with the reply audible the ring shows %q, want the replying animation", got)
@@ -243,13 +272,13 @@ func TestRingRepliesWithTheAudio(t *testing.T) {
 // failing: the slot keeps fetching its replies whole.
 func TestCancelDuringWholeFileKeepsDelivery(t *testing.T) {
 	f := newFaceTurn(t)
-	url, _ := heldSpeech(t)
+	reply := heldSpeech(t)
 
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: url})
-	f.settle(100 * time.Millisecond)
+	f.c.handle(event{kind: evReplyURL, url: reply.url})
+	f.fetched(reply)
 	f.c.handle(event{kind: evCancel})
-	f.settle(300 * time.Millisecond)
+	f.handleFor(300 * time.Millisecond)
 
 	if got := wakeword.Delivery(0); got != config.DeliveryWhole {
 		t.Fatalf("after a cancel the slot's delivery is %q, want %q", got, config.DeliveryWhole)
@@ -277,17 +306,17 @@ func (f *faceTurn) next(kind eventKind) event {
 // loop. Handled during the next turn, it must not show that turn's reply face before its own audio.
 func TestLatePlayingFromAStoppedReplyKeepsTheNextTurnThinking(t *testing.T) {
 	f := newFaceTurn(t)
-	first, release := heldSpeech(t)
+	first := heldSpeech(t)
 	f.c.handle(event{kind: evReplyText, text: "It's noon."})
-	f.c.handle(event{kind: evReplyURL, url: first})
-	close(release)
+	f.c.handle(event{kind: evReplyURL, url: first.url})
+	close(first.release)
 	late := f.next(evPlaying) // the first reply's audio is queued; the loop hasn't seen it yet
 
 	f.c.handle(event{kind: evCancel})
 	f.c.think() // the next turn, its reply still being synthesized
-	second, _ := heldSpeech(t)
+	second := heldSpeech(t)
 	f.c.handle(event{kind: evReplyText, text: "It's one."})
-	f.c.handle(event{kind: evReplyURL, url: second})
+	f.c.handle(event{kind: evReplyURL, url: second.url})
 
 	f.c.handle(late)
 	if got := f.screen(); got != "thinking" {
