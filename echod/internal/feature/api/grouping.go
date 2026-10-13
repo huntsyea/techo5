@@ -47,20 +47,20 @@ type regrouping struct {
 // newRegrouping announces the stage the device saved. It fails on placements that could not be
 // announced at every stage, two names that would clash among them, which is a device that should not
 // start rather than one that fails only when somebody turns grouping off.
-func newRegrouping(name string, ents []esphome.Entity, stage config.Stage) (*regrouping, []esphome.Device, error) {
+func newRegrouping(name string, ents []esphome.Entity, stage config.Stage) (*regrouping, component.Announcement, error) {
 	// Declared before anything is applied: Apply writes over what it reads.
 	declared, err := component.Declared(ents)
 	if err != nil {
-		return nil, nil, err
+		return nil, component.Announcement{}, err
 	}
 	a, err := component.Announce(name, declared, stage)
 	if err != nil {
-		return nil, nil, err
+		return nil, component.Announcement{}, err
 	}
 	if err := component.Apply(ents, a); err != nil {
-		return nil, nil, err
+		return nil, component.Announcement{}, err
 	}
-	return &regrouping{name: name, declared: declared, ents: ents, stage: stage}, a.Devices, nil
+	return &regrouping{name: name, declared: declared, ents: ents, stage: stage}, a, nil
 }
 
 // subscribed is Home Assistant having finished a connection at the current stage. It reports whether a
@@ -100,14 +100,14 @@ func (r *regrouping) step() bool {
 	return true
 }
 
-// between puts a saved stage on the entities and hands back the sub-devices to announce with it. It
+// between puts a saved stage on the entities and hands back the announcement, for its sub-devices. It
 // is only for when no client is connected, since a connection reads the entity list and the device
 // info without a lock.
-func (r *regrouping) between() ([]esphome.Device, bool) {
+func (r *regrouping) between() (component.Announcement, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.due == "" {
-		return nil, false
+		return component.Announcement{}, false
 	}
 	// Announce cannot fail here: newRegrouping already asked it about every stage.
 	a, err := component.Announce(r.name, r.declared, r.due)
@@ -116,12 +116,12 @@ func (r *regrouping) between() ([]esphome.Device, bool) {
 	}
 	if err != nil {
 		slog.Error("announcing the next grouping stage failed", "stage", r.stage, "next", r.due, "err", err)
-		return nil, false
+		return component.Announcement{}, false
 	}
 	slog.Info("grouping stage changed", "from", r.stage, "to", r.due,
 		"grouped", config.Get().Grouping.Grouped)
 	r.stage, r.due, r.seen = r.due, "", false
-	return a.Devices, true
+	return a, true
 }
 
 // SetGrouped is the "group settings into sub-devices" setting: it saves it and starts the device

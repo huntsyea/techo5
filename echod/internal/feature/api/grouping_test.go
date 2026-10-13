@@ -76,18 +76,18 @@ func start(t *testing.T, grouped bool, stage config.Stage) *device {
 func restart(t *testing.T) *device {
 	t.Helper()
 	d := &device{ents: entities()}
-	var err error
-	d.regrouping, d.devices, err = newRegrouping("Bedroom", d.ents, config.Get().Grouping.Stage)
+	r, a, err := newRegrouping("Bedroom", d.ents, config.Get().Grouping.Stage)
 	if err != nil {
 		t.Fatalf("starting: %v", err)
 	}
+	d.regrouping, d.devices = r, a.Devices
 	return d
 }
 
 // served is what Run does between one serve and the next: put on whatever stage is due.
 func (d *device) served() {
-	if devices, ok := d.between(); ok {
-		d.devices = devices
+	if a, ok := d.between(); ok {
+		d.devices = a.Devices
 	}
 }
 

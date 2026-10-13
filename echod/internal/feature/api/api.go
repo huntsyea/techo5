@@ -22,6 +22,7 @@ import (
 
 	"github.com/HuskerMinion/techo5/echod/internal/android/firewall"
 	"github.com/HuskerMinion/techo5/echod/internal/component"
+	"github.com/HuskerMinion/techo5/echod/internal/component/manifest"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/bluetooth"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
@@ -46,6 +47,10 @@ const writeTimeout = 20 * time.Second
 type API struct {
 	srv  *esphome.Server
 	name string
+
+	// mac and friendly are what the entity manifest is published under, every time the device
+	// announces (publish).
+	mac, friendly string
 
 	reconnect chan struct{}
 	announced sync.Once
@@ -125,7 +130,7 @@ func (a *API) Start(ctx context.Context) error {
 	// Before anything serves them, the entities take their places for the stage the device saved. Two
 	// names that would clash at any stage stop the device here, loudly, rather than once somebody turns
 	// grouping off.
-	regroup, devices, err := newRegrouping(device.Name, registered, config.Get().Grouping.Stage)
+	regroup, announced, err := newRegrouping(device.Name, registered, config.Get().Grouping.Stage)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}
@@ -137,6 +142,8 @@ func (a *API) Start(ctx context.Context) error {
 	}
 
 	a.name = layout.Slug(device.Name)
+	a.mac, a.friendly = mac, device.Name
+	a.publish(announced)
 	a.srv = &esphome.Server{
 		Addr:         device.Addr,
 		WriteTimeout: writeTimeout,
@@ -153,7 +160,7 @@ func (a *API) Start(ctx context.Context) error {
 			VoiceFeatures:     voice.Features,
 			BluetoothFeatures: bluetooth.Get().Features(),
 
-			Devices: devices,
+			Devices: announced.Devices,
 		},
 		PSK:    psk,
 		Logger: slog.Default(),
@@ -171,6 +178,16 @@ func (a *API) Start(ctx context.Context) error {
 		Handler: esphome.Chain(append(append(component.Default().Describers(), ents), component.Default().Handlers()...)...),
 	}
 	return nil
+}
+
+// publish tells the screen what the device announces, which it needs to find the entities in Home
+// Assistant. Called every time that changes: at start, which a rename restarts into, and after each
+// grouping stage. A manifest that cannot be written leaves the screen on the last one, which is not a
+// reason to keep Home Assistant from the device.
+func (a *API) publish(announced component.Announcement) {
+	if err := manifest.Publish(a.mac, a.name, a.friendly, announced); err != nil {
+		slog.Warn("publishing the entity manifest", "err", err)
+	}
 }
 
 // Run listens until ctx is canceled, advertising over mDNS so Home Assistant finds the device
@@ -222,8 +239,9 @@ func (a *API) Run(ctx context.Context) error {
 		a.srv.Info.BluetoothFeatures = bluetooth.Get().Features()
 		// The entities, too, are read by a connection without a lock, so a grouping stage saved while
 		// serving goes onto them here (grouping.go).
-		if devices, ok := a.regrouping().between(); ok {
-			a.srv.Info.Devices = devices
+		if announced, ok := a.regrouping().between(); ok {
+			a.srv.Info.Devices = announced.Devices
+			a.publish(announced)
 		}
 		if k := a.takeNextPSK(); k != nil {
 			a.srv.PSK = k
