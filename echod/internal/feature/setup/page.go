@@ -243,6 +243,8 @@ func (f *Feature) save(w http.ResponseWriter, r *http.Request) {
 		problem = saveCalendarLink(r)
 	case "calendar-remove":
 		problem = removeCalendarLink(r)
+	case "grouping":
+		problem = saveGrouping(r.PostFormValue("grouped") == "yes")
 	case "adopt":
 		if _, err := api.Get().OpenAdoption(); err != nil {
 			problem = "could not open the device to a Home Assistant: " + err.Error()
@@ -357,6 +359,7 @@ func (f *Feature) settingsPage(ctx context.Context, w http.ResponseWriter, token
 		updatesSection(w, token)
 		timezoneSection(w, token)
 		homeAssistantSection(w, token)
+		groupingSection(w, token)
 		diagnosticsSection(w)
 	}
 	fmt.Fprint(w, `</section></div></div>`)
