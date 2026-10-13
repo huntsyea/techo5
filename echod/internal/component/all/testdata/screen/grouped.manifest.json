@@ -1,0 +1,1029 @@
+{
+  "version": 1,
+  "mac": "f0:81:73:10:53:58",
+  "node": "bedroom",
+  "action_prefix": "bedroom",
+  "name": "Bedroom",
+  "entities": [
+    {
+      "object_id": "last_wake_word",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Last wake word"
+    },
+    {
+      "object_id": "last_heard",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Last heard"
+    },
+    {
+      "object_id": "last_reply",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Last reply"
+    },
+    {
+      "object_id": "button_action",
+      "type": "event",
+      "device_id": 0,
+      "name": "Action button"
+    },
+    {
+      "object_id": "button_mute",
+      "type": "event",
+      "device_id": 0,
+      "name": "Mute button"
+    },
+    {
+      "object_id": "button_volume_down",
+      "type": "event",
+      "device_id": 0,
+      "name": "Volume down button"
+    },
+    {
+      "object_id": "button_volume_up",
+      "type": "event",
+      "device_id": 0,
+      "name": "Volume up button"
+    },
+    {
+      "object_id": "microphone_mixing",
+      "type": "select",
+      "device_id": 2,
+      "name": "Microphone mixing"
+    },
+    {
+      "object_id": "microphone_gain",
+      "type": "number",
+      "device_id": 2,
+      "name": "Microphone gain"
+    },
+    {
+      "object_id": "microphone_leveling",
+      "type": "switch",
+      "device_id": 2,
+      "name": "Microphone leveling"
+    },
+    {
+      "object_id": "microphone_cancel_echo",
+      "type": "switch",
+      "device_id": 2,
+      "name": "Microphone echo cancellation"
+    },
+    {
+      "object_id": "microphone_echo_canceller",
+      "type": "select",
+      "device_id": 2,
+      "name": "Microphone echo canceller"
+    },
+    {
+      "object_id": "microphone_noise_reduction",
+      "type": "switch",
+      "device_id": 2,
+      "name": "Microphone noise reduction"
+    },
+    {
+      "object_id": "microphone_end_of_speech",
+      "type": "switch",
+      "device_id": 2,
+      "name": "End of speech on the device"
+    },
+    {
+      "object_id": "microphone_sensitivity",
+      "type": "number",
+      "device_id": 2,
+      "name": "Room sensitivity"
+    },
+    {
+      "object_id": "ring",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring"
+    },
+    {
+      "object_id": "segment_1",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 1"
+    },
+    {
+      "object_id": "segment_2",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 2"
+    },
+    {
+      "object_id": "segment_3",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 3"
+    },
+    {
+      "object_id": "segment_4",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 4"
+    },
+    {
+      "object_id": "segment_5",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 5"
+    },
+    {
+      "object_id": "segment_6",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 6"
+    },
+    {
+      "object_id": "segment_7",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 7"
+    },
+    {
+      "object_id": "segment_8",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 8"
+    },
+    {
+      "object_id": "segment_9",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 9"
+    },
+    {
+      "object_id": "segment_10",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 10"
+    },
+    {
+      "object_id": "segment_11",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 11"
+    },
+    {
+      "object_id": "segment_12",
+      "type": "light",
+      "device_id": 1,
+      "name": "LED ring segment 12"
+    },
+    {
+      "object_id": "camera_web_access",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Camera web access"
+    },
+    {
+      "object_id": "screen_web_access",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Screen web access"
+    },
+    {
+      "object_id": "talk_back",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Talk through cameras"
+    },
+    {
+      "object_id": "failure_effect",
+      "type": "select",
+      "device_id": 1,
+      "name": "Ring on failure"
+    },
+    {
+      "object_id": "keep_recordings_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Recordings kept"
+    },
+    {
+      "object_id": "keep_recordings_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Recordings kept"
+    },
+    {
+      "object_id": "room_reaction",
+      "type": "select",
+      "device_id": 1,
+      "name": "Ring follows the room"
+    },
+    {
+      "object_id": "wake_assistant_1",
+      "type": "button",
+      "device_id": 4,
+      "name": "Wake"
+    },
+    {
+      "object_id": "wake_threshold_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Wake word sensitivity"
+    },
+    {
+      "object_id": "wake_tone_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Wake word tone"
+    },
+    {
+      "object_id": "wake_effect_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Wake word effect"
+    },
+    {
+      "object_id": "thinking_effect_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Thinking effect"
+    },
+    {
+      "object_id": "replying_effect_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Replying effect"
+    },
+    {
+      "object_id": "reply_delivery_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Reply delivery"
+    },
+    {
+      "object_id": "reply_buffer_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Reply buffer"
+    },
+    {
+      "object_id": "follow_up_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Follow-up time"
+    },
+    {
+      "object_id": "follow_ups_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Follow-ups in a row"
+    },
+    {
+      "object_id": "follow_up_tone_1",
+      "type": "select",
+      "device_id": 4,
+      "name": "Follow-up tone"
+    },
+    {
+      "object_id": "max_listen_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Max listening time"
+    },
+    {
+      "object_id": "max_think_1",
+      "type": "number",
+      "device_id": 4,
+      "name": "Max thinking time"
+    },
+    {
+      "object_id": "wake_assistant_2",
+      "type": "button",
+      "device_id": 5,
+      "name": "Wake"
+    },
+    {
+      "object_id": "wake_threshold_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Wake word sensitivity"
+    },
+    {
+      "object_id": "wake_tone_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Wake word tone"
+    },
+    {
+      "object_id": "wake_effect_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Wake word effect"
+    },
+    {
+      "object_id": "thinking_effect_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Thinking effect"
+    },
+    {
+      "object_id": "replying_effect_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Replying effect"
+    },
+    {
+      "object_id": "reply_delivery_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Reply delivery"
+    },
+    {
+      "object_id": "reply_buffer_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Reply buffer"
+    },
+    {
+      "object_id": "follow_up_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Follow-up time"
+    },
+    {
+      "object_id": "follow_ups_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Follow-ups in a row"
+    },
+    {
+      "object_id": "follow_up_tone_2",
+      "type": "select",
+      "device_id": 5,
+      "name": "Follow-up tone"
+    },
+    {
+      "object_id": "max_listen_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Max listening time"
+    },
+    {
+      "object_id": "max_think_2",
+      "type": "number",
+      "device_id": 5,
+      "name": "Max thinking time"
+    },
+    {
+      "object_id": "speaker",
+      "type": "media_player",
+      "device_id": 0,
+      "name": "Speaker"
+    },
+    {
+      "object_id": "headphones",
+      "type": "binary_sensor",
+      "device_id": 3,
+      "name": "Headphones"
+    },
+    {
+      "object_id": "voice_resampling",
+      "type": "select",
+      "device_id": 3,
+      "name": "Voice resampling"
+    },
+    {
+      "object_id": "media_on_turn",
+      "type": "select",
+      "device_id": 3,
+      "name": "Music during a turn"
+    },
+    {
+      "object_id": "media_duck_level",
+      "type": "number",
+      "device_id": 3,
+      "name": "Music ducking"
+    },
+    {
+      "object_id": "speaker_eq",
+      "type": "switch",
+      "device_id": 3,
+      "name": "Speaker EQ"
+    },
+    {
+      "object_id": "bass",
+      "type": "number",
+      "device_id": 3,
+      "name": "Bass"
+    },
+    {
+      "object_id": "treble",
+      "type": "number",
+      "device_id": 3,
+      "name": "Treble"
+    },
+    {
+      "object_id": "quiet_hours",
+      "type": "select",
+      "device_id": 3,
+      "name": "Quiet hours"
+    },
+    {
+      "object_id": "night_volume",
+      "type": "number",
+      "device_id": 3,
+      "name": "Night volume"
+    },
+    {
+      "object_id": "duck_on_near_miss",
+      "type": "switch",
+      "device_id": 3,
+      "name": "Duck after a near miss"
+    },
+    {
+      "object_id": "home_assistant_sounds",
+      "type": "switch",
+      "device_id": 3,
+      "name": "Home Assistant sounds for muting and timers"
+    },
+    {
+      "object_id": "sleep_timer",
+      "type": "select",
+      "device_id": 0,
+      "name": "Sleep timer"
+    },
+    {
+      "object_id": "audio_output",
+      "type": "select",
+      "device_id": 3,
+      "name": "Audio output"
+    },
+    {
+      "object_id": "noise_layer_1",
+      "type": "select",
+      "device_id": 3,
+      "name": "White noise layer 1"
+    },
+    {
+      "object_id": "noise_layer_2",
+      "type": "select",
+      "device_id": 3,
+      "name": "White noise layer 2"
+    },
+    {
+      "object_id": "sendspin",
+      "type": "switch",
+      "device_id": 3,
+      "name": "Sendspin"
+    },
+    {
+      "object_id": "sendspin_state",
+      "type": "text_sensor",
+      "device_id": 3,
+      "name": "Sendspin state"
+    },
+    {
+      "object_id": "assistant_phase",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Assistant phase"
+    },
+    {
+      "object_id": "mic_mute",
+      "type": "switch",
+      "device_id": 2,
+      "name": "Microphone mute"
+    },
+    {
+      "object_id": "ring_muted",
+      "type": "select",
+      "device_id": 1,
+      "name": "Ring while muted"
+    },
+    {
+      "object_id": "mute_led_brightness",
+      "type": "select",
+      "device_id": 2,
+      "name": "Mute LED brightness"
+    },
+    {
+      "object_id": "timers",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Timers"
+    },
+    {
+      "object_id": "timers_detail",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Timers detail"
+    },
+    {
+      "object_id": "next_alarm",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Next alarm"
+    },
+    {
+      "object_id": "alarms_state",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Alarms state"
+    },
+    {
+      "object_id": "alarm_stop",
+      "type": "button",
+      "device_id": 0,
+      "name": "Stop alarm or timer"
+    },
+    {
+      "object_id": "alarm_snooze",
+      "type": "button",
+      "device_id": 0,
+      "name": "Snooze alarm"
+    },
+    {
+      "object_id": "alarm_sound",
+      "type": "select",
+      "device_id": 0,
+      "name": "Alarm sound"
+    },
+    {
+      "object_id": "alarm_snooze_length",
+      "type": "number",
+      "device_id": 0,
+      "name": "Snooze length"
+    },
+    {
+      "object_id": "ring_volume",
+      "type": "number",
+      "device_id": 0,
+      "name": "Ring volume"
+    },
+    {
+      "object_id": "missed_ring",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Missed ring"
+    },
+    {
+      "object_id": "weather_source",
+      "type": "select",
+      "device_id": 0,
+      "name": "Weather source"
+    },
+    {
+      "object_id": "radar_source",
+      "type": "select",
+      "device_id": 0,
+      "name": "Radar source"
+    },
+    {
+      "object_id": "weather_alerts",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Weather alerts"
+    },
+    {
+      "object_id": "camera_sound",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Camera sound"
+    },
+    {
+      "object_id": "slideshow_mode",
+      "type": "select",
+      "device_id": 0,
+      "name": "Slideshow"
+    },
+    {
+      "object_id": "slideshow_screensaver_overlay",
+      "type": "select",
+      "device_id": 0,
+      "name": "Screensaver clock"
+    },
+    {
+      "object_id": "slideshow_screensaver_idle",
+      "type": "number",
+      "device_id": 0,
+      "name": "Screensaver idle wait"
+    },
+    {
+      "object_id": "slideshow_interval",
+      "type": "number",
+      "device_id": 0,
+      "name": "Slideshow time per photo"
+    },
+    {
+      "object_id": "slideshow_shuffle",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Slideshow shuffle"
+    },
+    {
+      "object_id": "slideshow_subfolders",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Slideshow includes subfolders"
+    },
+    {
+      "object_id": "slideshow_weather_art",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Weather art"
+    },
+    {
+      "object_id": "slideshow_whole_photo",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Slideshow whole photo"
+    },
+    {
+      "object_id": "slideshow_folder",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Slideshow folder"
+    },
+    {
+      "object_id": "radio_station",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Radio station"
+    },
+    {
+      "object_id": "radio_artist",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Radio artist"
+    },
+    {
+      "object_id": "radio_title",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Radio title"
+    },
+    {
+      "object_id": "screen_dashboard",
+      "type": "select",
+      "device_id": 0,
+      "name": "Dashboard"
+    },
+    {
+      "object_id": "screen_dashboard_idle",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Dashboard when idle"
+    },
+    {
+      "object_id": "screen_dashboard_kiosk",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Dashboard without its header"
+    },
+    {
+      "object_id": "screen_dashboard_view",
+      "type": "select",
+      "device_id": 0,
+      "name": "Dashboard to show"
+    },
+    {
+      "object_id": "bluetooth_proxy",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Bluetooth proxy"
+    },
+    {
+      "object_id": "stop_word_sensitivity",
+      "type": "number",
+      "device_id": 2,
+      "name": "Stop word sensitivity"
+    },
+    {
+      "object_id": "screen",
+      "type": "light",
+      "device_id": 0,
+      "name": "Screen"
+    },
+    {
+      "object_id": "screen_auto_brightness",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Screen auto-brightness"
+    },
+    {
+      "object_id": "screen_clock_format",
+      "type": "select",
+      "device_id": 0,
+      "name": "Clock format"
+    },
+    {
+      "object_id": "screen_clock_style",
+      "type": "select",
+      "device_id": 0,
+      "name": "Clock style"
+    },
+    {
+      "object_id": "screen_camera_time",
+      "type": "select",
+      "device_id": 0,
+      "name": "Camera time on screen"
+    },
+    {
+      "object_id": "screen_answer_time",
+      "type": "select",
+      "device_id": 0,
+      "name": "Answer time on screen"
+    },
+    {
+      "object_id": "screen_turn_style",
+      "type": "select",
+      "device_id": 0,
+      "name": "Turn screen"
+    },
+    {
+      "object_id": "screen_call_button",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Call button on the home screen"
+    },
+    {
+      "object_id": "screen_weather_animation",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Weather animation"
+    },
+    {
+      "object_id": "screen_mute_ring_subtle",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Subtle mute ring"
+    },
+    {
+      "object_id": "screen_language",
+      "type": "select",
+      "device_id": 0,
+      "name": "Screen language"
+    },
+    {
+      "object_id": "bluetooth_pairing",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Bluetooth pairing"
+    },
+    {
+      "object_id": "bluetooth_audio",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Bluetooth audio"
+    },
+    {
+      "object_id": "bluetooth_reconnect",
+      "type": "button",
+      "device_id": 0,
+      "name": "Bluetooth reconnect"
+    },
+    {
+      "object_id": "bluetooth_disconnect",
+      "type": "button",
+      "device_id": 0,
+      "name": "Bluetooth disconnect"
+    },
+    {
+      "object_id": "cancel_turn",
+      "type": "button",
+      "device_id": 0,
+      "name": "Cancel voice turn"
+    },
+    {
+      "object_id": "clear_missed",
+      "type": "button",
+      "device_id": 0,
+      "name": "Clear missed rings"
+    },
+    {
+      "object_id": "firmware",
+      "type": "update",
+      "device_id": 0,
+      "name": "Firmware"
+    },
+    {
+      "object_id": "update_channel",
+      "type": "select",
+      "device_id": 0,
+      "name": "Update channel"
+    },
+    {
+      "object_id": "check_for_updates",
+      "type": "button",
+      "device_id": 0,
+      "name": "Check for updates"
+    },
+    {
+      "object_id": "update_status",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Update status"
+    },
+    {
+      "object_id": "update_outcome",
+      "type": "event",
+      "device_id": 0,
+      "name": "Update outcome"
+    },
+    {
+      "object_id": "update_automatically",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Install updates automatically"
+    },
+    {
+      "object_id": "phone",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Phone"
+    },
+    {
+      "object_id": "phone_peer",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Phone call"
+    },
+    {
+      "object_id": "phone_answer",
+      "type": "button",
+      "device_id": 0,
+      "name": "Answer call"
+    },
+    {
+      "object_id": "phone_hangup",
+      "type": "button",
+      "device_id": 0,
+      "name": "Hang up"
+    },
+    {
+      "object_id": "intercom_drop_in",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Allow Drop In"
+    },
+    {
+      "object_id": "intercom_do_not_disturb",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Intercom do not disturb"
+    },
+    {
+      "object_id": "setup_page",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Setup page"
+    },
+    {
+      "object_id": "cached_data",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Cached data"
+    },
+    {
+      "object_id": "free_space",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Free space"
+    },
+    {
+      "object_id": "purge_cache",
+      "type": "button",
+      "device_id": 0,
+      "name": "Purge cache"
+    },
+    {
+      "object_id": "restart",
+      "type": "button",
+      "device_id": 0,
+      "name": "Restart"
+    },
+    {
+      "object_id": "cpu_temperature",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "CPU temperature"
+    },
+    {
+      "object_id": "radio_temperature",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Radio temperature"
+    },
+    {
+      "object_id": "cpu_cores",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "CPU cores"
+    },
+    {
+      "object_id": "cpu_cores_online",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "CPU cores online"
+    },
+    {
+      "object_id": "load_average",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Load average"
+    },
+    {
+      "object_id": "memory_available",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Memory available"
+    },
+    {
+      "object_id": "lux",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Lux"
+    },
+    {
+      "object_id": "room_level",
+      "type": "sensor",
+      "device_id": 2,
+      "name": "Room level"
+    },
+    {
+      "object_id": "room_floor",
+      "type": "sensor",
+      "device_id": 2,
+      "name": "Room floor"
+    },
+    {
+      "object_id": "insecure_tls",
+      "type": "switch",
+      "device_id": 0,
+      "name": "Skip certificate checks"
+    },
+    {
+      "object_id": "ip_address",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "IP address"
+    },
+    {
+      "object_id": "hardware_color",
+      "type": "text_sensor",
+      "device_id": 0,
+      "name": "Hardware color"
+    },
+    {
+      "object_id": "wifi_signal",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Wifi signal"
+    },
+    {
+      "object_id": "wifi_received",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Wifi received"
+    },
+    {
+      "object_id": "wifi_sent",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "Wifi sent"
+    },
+    {
+      "object_id": "ble_advertisements",
+      "type": "sensor",
+      "device_id": 0,
+      "name": "BLE advertisements"
+    },
+    {
+      "object_id": "test_playback",
+      "type": "button",
+      "device_id": 0,
+      "name": "Test playback"
+    },
+    {
+      "object_id": "metrics_interval",
+      "type": "number",
+      "device_id": 0,
+      "name": "Metrics interval"
+    },
+    {
+      "object_id": "min_cores",
+      "type": "number",
+      "device_id": 0,
+      "name": "Minimum CPU cores"
+    },
+    {
+      "object_id": "ssh",
+      "type": "switch",
+      "device_id": 0,
+      "name": "SSH"
+    },
+    {
+      "object_id": "camera",
+      "type": "camera",
+      "device_id": 0,
+      "name": "Camera"
+    }
+  ]
+}

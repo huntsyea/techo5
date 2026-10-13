@@ -39,13 +39,34 @@ const (
 // Stages is every stage, from grouped to flat.
 var Stages = []Stage{StageGrouped, StageRenamed, StageMoved, StageFlat}
 
-func (s Stage) valid() bool {
-	for _, v := range Stages {
+// Step is the stage's place in Stages, grouped being 0, or -1 for one this build does not know.
+func (s Stage) Step() int {
+	for i, v := range Stages {
 		if v == s {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
+}
+
+// Valid is whether this build knows the stage.
+func (s Stage) Valid() bool { return s.Step() >= 0 }
+
+// Renamed is whether entities on sub-devices carry the names they have on the device itself.
+func (s Stage) Renamed() bool { return s.Step() >= StageRenamed.Step() }
+
+// Moved is whether entities on sub-devices are announced on the device itself.
+func (s Stage) Moved() bool { return s.Step() >= StageMoved.Step() }
+
+// AnnouncesSubDevices is whether the device info still lists the sub-devices, empty or not.
+func (s Stage) AnnouncesSubDevices() bool { return s.Valid() && s != StageFlat }
+
+// Ends is the stage at the end of the walk toward grouped: grouped itself, or flat.
+func Ends(grouped bool) Stage {
+	if grouped {
+		return StageGrouped
+	}
+	return StageFlat
 }
 
 func defaultGrouping() Grouping { return Grouping{Grouped: true, Stage: StageGrouped} }
@@ -57,7 +78,7 @@ func (w GroupingWriter) Grouped(v bool) error {
 }
 
 func (w GroupingWriter) Stage(s Stage) error {
-	if !s.valid() {
+	if !s.Valid() {
 		return fmt.Errorf("config: grouping stage %q", s)
 	}
 	return w.st.Update(func(c *Config) { c.Grouping.Stage = s })

@@ -35,7 +35,7 @@ func (a *API) advertise(ctx context.Context, port int) {
 		}
 
 		adv, err := mdns.Advertise(mdns.Config{
-			Name:         a.name,
+			Name:         a.identity.Node,
 			FriendlyName: a.srv.Info.FriendlyName,
 			Port:         port,
 			MACAddress:   a.srv.Info.MACAddress,
@@ -59,7 +59,7 @@ func (a *API) advertise(ctx context.Context, port int) {
 			continue
 		}
 
-		slog.Info("advertising over mdns", "name", a.name, "port", port, "addrs", metrics.AddressKey(ips))
+		slog.Info("advertising over mdns", "name", a.identity.Node, "port", port, "addrs", metrics.AddressKey(ips))
 
 		// The registration stands until the addresses it was made with are no longer the ones the
 		// device has: a lease that changed, or a network that arrived late.

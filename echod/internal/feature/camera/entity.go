@@ -53,6 +53,8 @@ func key(s string) uint32 {
 // DescribesEntities marks the feature as a component.Describer.
 func (f *Feature) DescribesEntities() {}
 
+var _ component.Placer = (*Feature)(nil)
+
 // Placements is where the entity is announced, for the screen's manifest: on the device itself under
 // its own name, at every grouping stage, and only on a device with a camera, as in Handle.
 func (f *Feature) Placements() []component.Placement {

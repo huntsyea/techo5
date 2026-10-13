@@ -20,7 +20,7 @@ func TestBuildGolden(t *testing.T) {
 		{ObjectID: "wake_threshold_1", Type: "number", DeviceID: 4, Name: "Wake word sensitivity"},
 		{ObjectID: "mute", Type: "switch", DeviceID: 0, Name: "Mute"},
 	}}
-	got, err := Build("F0:81:73:10:53:58", "bedroom", "Bedroom", a)
+	got, err := Build(Identity{MAC: "F0:81:73:10:53:58", Node: "bedroom", Name: "Bedroom"}, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +28,7 @@ func TestBuildGolden(t *testing.T) {
   "version": 1,
   "mac": "f0:81:73:10:53:58",
   "node": "bedroom",
+  "action_prefix": "bedroom",
   "name": "Bedroom",
   "entities": [
     {
@@ -50,9 +51,24 @@ func TestBuildGolden(t *testing.T) {
 	}
 }
 
+// Home Assistant names the device's actions after its node name with every hyphen made an underscore
+// (manager.py, build_service_name), and the node name of a device called "Bedroom Spot" is
+// "bedroom-spot": the screen calls esphome.bedroom_spot_alarm_set, never esphome.bedroom-spot_….
+func TestActionPrefixIsWhatHomeAssistantNamesActionsAfter(t *testing.T) {
+	got, err := Build(Identity{MAC: "f08173105358", Node: "bedroom-spot", Name: "Bedroom Spot"}, component.Announcement{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"node": "bedroom-spot"`, `"action_prefix": "bedroom_spot"`, `"name": "Bedroom Spot"`} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("no %s in\n%s", want, got)
+		}
+	}
+}
+
 func TestBuildMAC(t *testing.T) {
 	for _, in := range []string{"f08173105358", "F0:81:73:10:53:58", "f0-81-73-10-53-58\n"} {
-		got, err := Build(in, "bedroom", "Bedroom", component.Announcement{})
+		got, err := Build(Identity{MAC: in, Node: "bedroom", Name: "Bedroom"}, component.Announcement{})
 		if err != nil {
 			t.Fatalf("%q: %v", in, err)
 		}
@@ -64,7 +80,7 @@ func TestBuildMAC(t *testing.T) {
 		}
 	}
 	for _, in := range []string{"", "f0817310535", "00:00:00:00:00:00"} {
-		if _, err := Build(in, "bedroom", "Bedroom", component.Announcement{}); err == nil {
+		if _, err := Build(Identity{MAC: in, Node: "bedroom", Name: "Bedroom"}, component.Announcement{}); err == nil {
 			t.Errorf("%q: no error", in)
 		}
 	}
@@ -155,14 +171,14 @@ func TestPublishIncludesDescribedEntities(t *testing.T) {
 	p := Publisher{Path: filepath.Join(t.TempDir(), "export", "ha-entities.json"), Registry: r}
 
 	a := component.Announcement{Entities: []component.Placement{{ObjectID: "mute", Type: "switch", Name: "Mute"}}}
-	if err := p.Publish("f08173105358", "bedroom", "Bedroom", a); err != nil {
+	if err := p.Publish(Identity{MAC: "f08173105358", Node: "bedroom", Name: "Bedroom"}, a); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(p.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, _ := Build("f08173105358", "bedroom", "Bedroom", component.Announcement{Entities: []component.Placement{
+	want, _ := Build(Identity{MAC: "f08173105358", Node: "bedroom", Name: "Bedroom"}, component.Announcement{Entities: []component.Placement{
 		{ObjectID: "mute", Type: "switch", Name: "Mute"},
 		{ObjectID: "camera", Type: "camera", Name: "Camera"},
 	}})

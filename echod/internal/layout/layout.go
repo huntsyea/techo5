@@ -37,6 +37,14 @@ const (
 	// read-only.
 	UpdatingPath = StateDir + "/updating"
 
+	// ExportDir is what echod publishes for the screen, which the screen's chroot mounts whole and
+	// read-only. Nothing secret goes in it (the psk is beside it in StateDir, never in it), and nothing
+	// but ManifestPath: a directory mount is what lets the screen see each replacement of the file.
+	ExportDir = StateDir + "/export"
+
+	// ManifestPath is what the device announces to Home Assistant right now (component/manifest).
+	ManifestPath = ExportDir + "/ha-entities.json"
+
 	// LinuxDir is where the Linux image installs the daemon, and the fallback when the executable's
 	// own path cannot be read.
 	LinuxDir = "/usr/local/bin"

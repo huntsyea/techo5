@@ -98,6 +98,13 @@ type Describer interface {
 	DescribesEntities()
 }
 
+// Placer is a Describer that says where the entries it adds to the entity list are announced. Those
+// entries are not in the registry's entities, so an Announcement does not carry them, but Home
+// Assistant registers them like any other and the screen may want them (component/manifest).
+type Placer interface {
+	Placements() []Placement
+}
+
 // Restorer puts the component back the way the device was left, once, at start-up.
 type Restorer interface {
 	Restore(config.Config)

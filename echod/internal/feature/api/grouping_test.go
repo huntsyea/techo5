@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"fmt"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -52,10 +55,10 @@ var todaysSubDevices = []esphome.Device{
 	{ID: 5, Name: "Bedroom assistant 2"},
 }
 
-// device is a regrouping over fresh entities, with the setting and stage given saved in a fresh store,
+// device is a migration over fresh entities, with the setting and stage given saved in a fresh store,
 // as a device starting up with them would have.
 type device struct {
-	*regrouping
+	*migration
 	st      *config.Store
 	ents    []esphome.Entity
 	devices []esphome.Device
@@ -87,17 +90,17 @@ func store(t *testing.T) *config.Store {
 func restart(t *testing.T, st *config.Store) *device {
 	t.Helper()
 	d := &device{ents: entities(), st: st}
-	r, a, err := newRegrouping(st, "Bedroom", d.ents)
+	r, a, err := startMigration(st, "Bedroom", d.ents)
 	if err != nil {
 		t.Fatalf("starting: %v", err)
 	}
-	d.regrouping, d.devices = r, a.Devices
+	d.migration, d.devices = r, a.Devices
 	return d
 }
 
 // served is what Run does between one serve and the next: put on whatever stage is due.
 func (d *device) served() {
-	if a, ok := d.between(); ok {
+	if a, ok := d.applyDue(); ok {
 		d.devices = a.Devices
 	}
 }
@@ -230,8 +233,8 @@ var flatDevices = map[string]uint32{
 	"speaker": 0, "ring_muted": 0, "microphone_sensitivity": 0, "bass": 0, "wake_threshold_1": 0, "wake_threshold_2": 0,
 }
 
-// checkStage asserts the device announces what the spec says each stage is.
-func checkStage(t *testing.T, d *device, s config.Stage) {
+// checkPlaced asserts the device announces what the spec says each stage is.
+func checkPlaced(t *testing.T, d *device, s config.Stage) {
 	t.Helper()
 	got := d.now()
 	wantDevices, wantPlaced, wantNames := todaysSubDevices, groupedDevices, flatNames
@@ -252,6 +255,12 @@ func checkStage(t *testing.T, d *device, s config.Stage) {
 	if !maps.Equal(names(got), wantNames) {
 		t.Errorf("%s: names = %v, want %v", s, names(got), wantNames)
 	}
+}
+
+// checkStage asserts the device announces what the spec says each stage is, and has saved it.
+func checkStage(t *testing.T, d *device, s config.Stage) {
+	t.Helper()
+	checkPlaced(t, d, s)
 	if saved := d.st.Get().Grouping.Stage; saved != s {
 		t.Errorf("%s: saved stage = %s", s, saved)
 	}
@@ -330,7 +339,7 @@ func TestTurnedBackOnTheDeviceWalksBackToGrouped(t *testing.T) {
 
 // api is the server around a device, for what the setup page calls.
 func (d *device) api() *API {
-	return &API{reconnect: make(chan struct{}, 1), regroup: d.regrouping, cfg: d.st}
+	return &API{reconnect: make(chan struct{}, 1), migration: d.migration, cfg: d.st}
 }
 
 func reconnected(a *API) bool {
@@ -401,7 +410,38 @@ func TestSettingGroupingBeforeTheServerStartsOnlySavesIt(t *testing.T) {
 func TestNamesThatWouldClashFlattenedStopTheStart(t *testing.T) {
 	st := store(t)
 	ents := append(entities(), &esphome.Number{Base: esphome.Base{ObjectID: "room_sensitivity", Name: "Microphone room sensitivity"}})
-	if _, _, err := newRegrouping(st, "Bedroom", ents); err == nil {
+	if _, _, err := startMigration(st, "Bedroom", ents); err == nil {
 		t.Fatal("a device whose flattened names clash started")
+	}
+}
+
+// A saved stage this build does not know (a hand-edited file, one from a newer build) does not stop
+// the device, which would only start again to stop again. It comes up at the stage its setting names
+// the end of, grouped or flat, and leaves the file as it found it until a real step is saved.
+func TestAnUnknownSavedStageFallsBackToTheSetting(t *testing.T) {
+	for _, tt := range []struct {
+		grouped bool
+		want    config.Stage
+	}{{true, config.StageGrouped}, {false, config.StageFlat}} {
+		path := filepath.Join(t.TempDir(), "state.json")
+		was := []byte(fmt.Sprintf(`{"grouping":{"grouped":%v,"stage":"sideways"}}`, tt.grouped))
+		if err := os.WriteFile(path, was, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		st, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := restart(t, st)
+		if d.stage != tt.want {
+			t.Errorf("grouped %v: announcing %s, want %s", tt.grouped, d.stage, tt.want)
+		}
+		checkPlaced(t, d, tt.want)
+		if d.connected() {
+			t.Errorf("grouped %v: a device at the stage its setting names asked to reconnect", tt.grouped)
+		}
+		if now, _ := os.ReadFile(path); !bytes.Equal(now, was) {
+			t.Errorf("grouped %v: the file was rewritten to %s", tt.grouped, now)
+		}
 	}
 }

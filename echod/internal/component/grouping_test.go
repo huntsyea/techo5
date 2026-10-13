@@ -149,6 +149,32 @@ func TestAClashOnOneSubDeviceIsRefused(t *testing.T) {
 	}
 }
 
+// Home Assistant's first pass over an entity list matches an entity it does not know by unique id to one
+// it no longer sees by name alone, across devices (entity.py, _build_identity_indexes). So no stage may
+// give an entity a new name that another entity of its type has just given up, in either direction:
+// Home Assistant would hand the second entity's registry entry, entity id and all, to the first.
+// Nothing clashes within any one stage here; only the step between two does.
+func TestANewNameAnotherEntityJustGaveUpIsRefused(t *testing.T) {
+	steal := append(slices.Clone(declared),
+		// Grouped "Sensitivity" on Assistant 1, renamed "Assistant 1 sensitivity"...
+		Placement{ObjectID: "sensitivity_1", Type: "number", DeviceID: AssistantDevice(0), Name: "Sensitivity"},
+		// ...which is what this one on the microphone is called grouped, before its own rename.
+		Placement{ObjectID: "room_floor", Type: "number", DeviceID: DeviceMicrophone, Name: "Assistant 1 sensitivity"},
+	)
+	for _, s := range config.Stages {
+		if _, err := Announce("Echo Spot", steal, s); err == nil {
+			t.Errorf("%s: announced, though going between grouped and renamed hands room_floor's entity to sensitivity_1", s)
+		}
+	}
+
+	// The same names on entities of different types are no clash: Home Assistant matches within a type.
+	other := slices.Clone(steal)
+	other[len(other)-1].Type = "sensor"
+	if _, err := Announce("Echo Spot", other, config.StageGrouped); err != nil {
+		t.Errorf("a number and a sensor that share a name across a step were refused: %v", err)
+	}
+}
+
 // An entity on a sub-device that does not exist has nowhere to go once flattened and no label to take.
 func TestAnUnknownSubDeviceIsRefused(t *testing.T) {
 	stray := append(slices.Clone(declared), Placement{ObjectID: "stray", DeviceID: 99, Name: "Stray"})

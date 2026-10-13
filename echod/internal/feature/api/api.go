@@ -45,12 +45,11 @@ func init() {
 const writeTimeout = 20 * time.Second
 
 type API struct {
-	srv  *esphome.Server
-	name string
+	srv *esphome.Server
 
-	// mac and friendly are what the entity manifest is published under, every time the device
-	// announces (publish).
-	mac, friendly string
+	// identity is who the device says it is: its node name, which the server and mDNS give, and with
+	// its MAC and display name what the entity manifest is published under (publish).
+	identity manifest.Identity
 
 	reconnect chan struct{}
 	announced sync.Once
@@ -61,9 +60,9 @@ type API struct {
 	nextPSK *esphome.PSK
 	unkeyed bool
 
-	// regroup is where the entities are announced, grouped or flat, and the way between (grouping.go).
-	// Under mu, since the setup page may change the setting before the server has started.
-	regroup *regrouping
+	// migration is where the entities are announced, grouped or flat, and the way between
+	// (grouping.go). Under mu, since the setup page may change the setting before the server has started.
+	migration *migration
 
 	// cfg is where grouping is kept, nil for the device's own store. A test's own store, otherwise.
 	cfg settings
@@ -133,25 +132,24 @@ func (a *API) Start(ctx context.Context) error {
 	// Before anything serves them, the entities take their places for the stage the device saved. Two
 	// names that would clash at any stage stop the device here, loudly, rather than once somebody turns
 	// grouping off.
-	regroup, announced, err := newRegrouping(a.settings(), device.Name, registered)
+	m, announced, err := startMigration(a.settings(), device.Name, registered)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}
 	a.mu.Lock()
-	a.regroup = regroup
+	a.migration = m
 	a.mu.Unlock()
 	if err := ents.AddActions(component.Default().Actions()...); err != nil {
 		return err
 	}
 
-	a.name = layout.Slug(device.Name)
-	a.mac, a.friendly = mac, device.Name
+	a.identity = manifest.Identity{MAC: mac, Node: layout.Slug(device.Name), Name: device.Name}
 	a.publish(announced)
 	a.srv = &esphome.Server{
 		Addr:         device.Addr,
 		WriteTimeout: writeTimeout,
 		Info: esphome.Info{
-			Name:         a.name,
+			Name:         a.identity.Node,
 			FriendlyName: device.Name,
 			MACAddress:   mac,
 			Manufacturer: layout.Manufacturer,
@@ -170,15 +168,15 @@ func (a *API) Start(ctx context.Context) error {
 		// Persist a key Home Assistant pushes, or the next connection reverts to the old one.
 		OnSetEncryptionKey: a.keySet,
 
-		OnSubscribed: func() {
-			component.Subscribed.Emit(struct{}{})
-			a.subscribed()
-		},
+		OnSubscribed: func() { component.Subscribed.Emit(struct{}{}) },
 
 		// The handlers components answer for themselves rather than through an entity: the voice
 		// satellite's pipeline traffic, and the Bluetooth proxy's subscribe and set-mode messages.
 		// Describers go first so what they add to the entity list lands before the library's Done.
-		Handler: esphome.Chain(append(append(component.Default().Describers(), ents), component.Default().Handlers()...)...),
+		//
+		// First of all, whether Home Assistant has seen the grouping stage (grouping.go).
+		Handler: esphome.Chain(append(append(append([]esphome.Handler{esphome.HandlerFunc(a.homeAssistantSubscribed)},
+			component.Default().Describers()...), ents), component.Default().Handlers()...)...),
 	}
 	return nil
 }
@@ -188,7 +186,7 @@ func (a *API) Start(ctx context.Context) error {
 // grouping stage. A manifest that cannot be written leaves the screen on the last one, which is not a
 // reason to keep Home Assistant from the device.
 func (a *API) publish(announced component.Announcement) {
-	if err := manifest.Publish(a.mac, a.name, a.friendly, announced); err != nil {
+	if err := manifest.Publish(a.identity, announced); err != nil {
 		slog.Warn("publishing the entity manifest", "err", err)
 	}
 }
@@ -242,7 +240,7 @@ func (a *API) Run(ctx context.Context) error {
 		a.srv.Info.BluetoothFeatures = bluetooth.Get().Features()
 		// The entities, too, are read by a connection without a lock, so a grouping stage saved while
 		// serving goes onto them here (grouping.go).
-		if announced, ok := a.regrouping().between(); ok {
+		if announced, ok := a.currentMigration().applyDue(); ok {
 			a.srv.Info.Devices = announced.Devices
 			a.publish(announced)
 		}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/config"
@@ -13,8 +12,9 @@ import (
 
 // Grouping settings into sub-devices.
 //
-// Home Assistant shows the device's settings under sub-devices beneath it, one per area (Voice,
-// Screen and so on). Turning that off puts them all on the device itself. The entity ids are kept,
+// Home Assistant shows some of the device's settings under sub-devices beneath it: Ring, Microphone,
+// Playback, and Assistant 1 and 2, one per wake word slot. Turning that off puts them all on the
+// device itself. The entity ids are kept,
 // because the device moves them in three steps Home Assistant can follow, one per connection
 // (api/grouping.go), so it takes a few reconnections rather than happening at once; and while it is
 // under way the page says which step it is on.
@@ -50,7 +50,7 @@ func groupingStep(grouped bool, stage config.Stage) (step, of int) {
 		return 0, 0
 	}
 	of = len(config.Stages) - 1
-	step = slices.Index(config.Stages, next)
+	step = next.Step()
 	if grouped {
 		step = of - step
 	}

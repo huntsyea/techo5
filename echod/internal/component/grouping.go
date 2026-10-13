@@ -25,7 +25,6 @@ package component
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -57,11 +56,12 @@ type Announcement struct {
 // placements.
 //
 // It refuses placements that could not be announced at every stage, whichever it is asked for: an
-// entity on a sub-device that does not exist, or two whose names would clash on one device, grouped or
-// flattened. So a clash fails the device at start-up wherever it is, rather than only once someone
-// turns grouping off.
+// entity on a sub-device that does not exist, two whose names would clash on one device, grouped or
+// flattened, or a step between two stages that would give one entity's place in Home Assistant to
+// another (matchable). So a clash fails the device at start-up wherever it is, rather than only once
+// someone turns grouping off.
 func Announce(name string, declared []Placement, stage config.Stage) (Announcement, error) {
-	if !slices.Contains(config.Stages, stage) {
+	if !stage.Valid() {
 		return Announcement{}, fmt.Errorf("grouping: unknown stage %q", stage)
 	}
 	for _, p := range declared {
@@ -74,6 +74,16 @@ func Announce(name string, declared []Placement, stage config.Stage) (Announceme
 			return Announcement{}, err
 		}
 	}
+	for i := 1; i < len(config.Stages); i++ {
+		from, to := config.Stages[i-1], config.Stages[i]
+		a, b := place(name, declared, from).Entities, place(name, declared, to).Entities
+		if err := matchable(from, to, a, b); err != nil {
+			return Announcement{}, err
+		}
+		if err := matchable(to, from, b, a); err != nil {
+			return Announcement{}, err
+		}
+	}
 	return place(name, declared, stage), nil
 }
 
@@ -81,7 +91,7 @@ func Announce(name string, declared []Placement, stage config.Stage) (Announceme
 // it is there. It is only a step: when to take it, which is after Home Assistant has seen the current
 // one, is the caller's to decide.
 func Next(grouped bool, stage config.Stage) config.Stage {
-	i := slices.Index(config.Stages, stage)
+	i := stage.Step()
 	switch {
 	case i < 0:
 		return stage
@@ -95,11 +105,8 @@ func Next(grouped bool, stage config.Stage) config.Stage {
 
 // place is Announce for placements already known to be sound.
 func place(name string, declared []Placement, stage config.Stage) Announcement {
-	renamed := stage != config.StageGrouped
-	moved := stage == config.StageMoved || stage == config.StageFlat
-
 	var a Announcement
-	if stage != config.StageFlat {
+	if stage.AnnouncesSubDevices() {
 		for _, d := range SubDevices() {
 			a.Devices = append(a.Devices, esphome.Device{ID: d.ID, Name: name + " " + lowerFirst(d.Label)})
 		}
@@ -107,10 +114,10 @@ func place(name string, declared []Placement, stage config.Stage) Announcement {
 
 	for _, p := range declared {
 		if d, ok := subDevice(p.DeviceID); ok {
-			if renamed {
+			if stage.Renamed() {
 				p.Name = d.flatName(p.ObjectID, p.Name)
 			}
-			if moved {
+			if stage.Moved() {
 				p.DeviceID = 0
 			}
 		}
@@ -133,6 +140,43 @@ func unique(ents []Placement) error {
 			return fmt.Errorf("grouping: %s and %s are both called %q on device %d", other, p.ObjectID, p.Name, p.DeviceID)
 		}
 		seen[k] = p.ObjectID
+	}
+	return nil
+}
+
+// matchable refuses a step from one stage to the next that Home Assistant would follow wrongly.
+//
+// Its first pass over an entity list (entity.py, async_static_info_updated) keeps every entity whose
+// unique id it still sees, then matches each it does not know to one it no longer sees by name alone,
+// within a type and across devices: that is how it follows a move. So an entity that takes a new name
+// another entity of its type is giving up in the same step would be handed that other entity's registry
+// entry, entity id and all. Unique names within each stage do not rule that out; only the pair does.
+func matchable(fromStage, toStage config.Stage, from, to []Placement) error {
+	type match struct{ typ, name string }
+	uid := func(p Placement) string { return fmt.Sprintf("%d/%s/%s", p.DeviceID, p.Type, p.Name) }
+	kept := map[string]bool{}
+	for _, p := range to {
+		kept[uid(p)] = true
+	}
+	known := map[string]bool{}
+	gone := map[match][]string{}
+	for _, p := range from {
+		known[uid(p)] = true
+		if !kept[uid(p)] {
+			k := match{p.Type, p.Name}
+			gone[k] = append(gone[k], p.ObjectID)
+		}
+	}
+	for _, p := range to {
+		if known[uid(p)] {
+			continue
+		}
+		for _, other := range gone[match{p.Type, p.Name}] {
+			if other != p.ObjectID {
+				return fmt.Errorf("grouping: from %s to %s, %s would take %s's place in Home Assistant: it is called %q, as %s was",
+					fromStage, toStage, p.ObjectID, other, p.Name, other)
+			}
+		}
 	}
 	return nil
 }
@@ -180,6 +224,11 @@ func Apply(ents []esphome.Entity, a Announcement) error {
 	for _, e := range ents {
 		b, _ := base(e)
 		p := by[e.Object()]
+		// The library has no setter for these and no lock over them (Base.mu guards only its notifier),
+		// so they are written bare. That is safe as it is used: the API applies a stage only while no
+		// client is connected. Name is read only when a connection lists entities, so nothing reads it
+		// then. DeviceID is also read by a state change published meanwhile, which goes to no one; it is
+		// an aligned 32-bit word, so that read sees the old device or the new, never a mix.
 		b.DeviceID, b.Name = p.DeviceID, p.Name
 	}
 	return nil

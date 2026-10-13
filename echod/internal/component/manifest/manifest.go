@@ -15,24 +15,38 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 )
 
-// Path is where the manifest lives. The directory holds nothing else, so the screen's chroot can mount
-// it whole, read-only, and still see each replacement.
-const Path = layout.StateDir + "/export/ha-entities.json"
-
 // version is the schema's. The screen refuses a version it does not know rather than guess.
 const version = 1
 
+// Identity is the device the manifest is for, as it presents itself to Home Assistant.
+type Identity struct {
+	// MAC is its address, in any form layout.MAC reads.
+	MAC string
+
+	// Node is its node name (layout.Slug of Name: "bedroom-spot"), what the device info's name is.
+	Node string
+
+	// Name is its display name ("Bedroom Spot").
+	Name string
+}
+
 type manifest struct {
-	Version  int      `json:"version"`
-	MAC      string   `json:"mac"`
-	Node     string   `json:"node"`
-	Name     string   `json:"name"`
-	Entities []entity `json:"entities"`
+	Version int    `json:"version"`
+	MAC     string `json:"mac"`
+	Node    string `json:"node"`
+
+	// ActionPrefix is what Home Assistant names the device's actions after, esphome.<prefix>_<action>:
+	// the node name with every hyphen made an underscore (manager.py, build_service_name). Written out
+	// so the screen does not have to know the rule.
+	ActionPrefix string   `json:"action_prefix"`
+	Name         string   `json:"name"`
+	Entities     []entity `json:"entities"`
 }
 
 type entity struct {
@@ -40,13 +54,6 @@ type entity struct {
 	Type     string `json:"type"`
 	DeviceID uint32 `json:"device_id"`
 	Name     string `json:"name"`
-}
-
-// Placer is a component.Describer that says where the entries it adds to the entity list are announced.
-// Those entries are not in the registry's entities, so the announcement does not carry them, but Home
-// Assistant registers them like any other and the screen may want them (the camera).
-type Placer interface {
-	Placements() []component.Placement
 }
 
 // Publisher writes the manifest for one registry to one path.
@@ -58,20 +65,20 @@ type Publisher struct {
 // Publish writes the manifest for an announcement to Path, if it changed, with whatever the registry's
 // describers add to the entity list after it. Call it every time the device announces: at start, after
 // each grouping stage and after a rename.
-func Publish(mac, node, name string, a component.Announcement) error {
-	return Publisher{Path: Path, Registry: component.Default()}.Publish(mac, node, name, a)
+func Publish(id Identity, a component.Announcement) error {
+	return Publisher{Path: layout.ManifestPath, Registry: component.Default()}.Publish(id, a)
 }
 
 // Publish is the package's Publish, for this publisher's registry and path.
-func (p Publisher) Publish(mac, node, name string, a component.Announcement) error {
+func (p Publisher) Publish(id Identity, a component.Announcement) error {
 	ents := slices.Clone(a.Entities)
 	for _, h := range p.Registry.Describers() {
-		if pl, ok := h.(Placer); ok {
+		if pl, ok := h.(component.Placer); ok {
 			ents = append(ents, pl.Placements()...)
 		}
 	}
 	a.Entities = ents
-	data, err := Build(mac, node, name, a)
+	data, err := Build(id, a)
 	if err != nil {
 		return err
 	}
@@ -79,15 +86,21 @@ func (p Publisher) Publish(mac, node, name string, a component.Announcement) err
 	return err
 }
 
-// Build is the manifest for a device with this MAC, node name (the slug Home Assistant's actions are
-// named after) and display name, announcing a.
+// Build is the manifest for the device id names, announcing a.
 //
 // The MAC is written the way Home Assistant writes it into unique ids (format_mac: lower case, colon
 // separated), whatever form it comes in, since the screen matches it as a string.
-func Build(mac, node, name string, a component.Announcement) ([]byte, error) {
-	m := manifest{Version: version, MAC: layout.MAC(mac), Node: node, Name: name, Entities: []entity{}}
+func Build(id Identity, a component.Announcement) ([]byte, error) {
+	m := manifest{
+		Version:      version,
+		MAC:          layout.MAC(id.MAC),
+		Node:         id.Node,
+		ActionPrefix: strings.ReplaceAll(id.Node, "-", "_"),
+		Name:         id.Name,
+		Entities:     []entity{},
+	}
 	if m.MAC == "" {
-		return nil, fmt.Errorf("manifest: %q is not a MAC address", mac)
+		return nil, fmt.Errorf("manifest: %q is not a MAC address", id.MAC)
 	}
 	for _, p := range a.Entities {
 		m.Entities = append(m.Entities, entity{ObjectID: p.ObjectID, Type: p.Type, DeviceID: p.DeviceID, Name: p.Name})
