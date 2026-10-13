@@ -44,6 +44,7 @@ type Config struct {
 	Dashboard      Dashboard      `json:"dashboard"`
 	Calendar       Calendar       `json:"calendar"`
 	Brain          Brain          `json:"brain"`
+	Grouping       Grouping       `json:"grouping"`
 }
 
 // Defaults is a device nobody has set anything on.
@@ -60,6 +61,7 @@ func Defaults() Config {
 		Screen:     defaultScreen(),
 		Home:       defaultHome(),
 		Security:   defaultSecurity(),
+		Grouping:   defaultGrouping(),
 
 		// Only the stop word. The slots are absent until something chooses one, and Slot fills in the
 		// defaults for whichever have not been.
@@ -102,6 +104,7 @@ func (w Writer) Calendar() CalendarWriter             { return CalendarWriter(w)
 func (w Writer) Brain() BrainWriter                   { return BrainWriter(w) }
 func (w Writer) TalkBack() TalkBackWriter             { return TalkBackWriter(w) }
 func (w Writer) Streaming() StreamingWriter           { return StreamingWriter(w) }
+func (w Writer) Grouping() GroupingWriter             { return GroupingWriter(w) }
 
 // Wake names one slot, since every wake word setting belongs to one.
 func (w Writer) Wake(slot int) WakeWriter { return WakeWriter{st: w.st, slot: slot} }

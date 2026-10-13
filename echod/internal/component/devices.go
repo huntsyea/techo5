@@ -1,5 +1,10 @@
 package component
 
+import (
+	"fmt"
+	"slices"
+)
+
 // Sub-devices Home Assistant shows beneath this one, which entities join by Base.DeviceID. Zero is the
 // device itself and is what most things want.
 //
@@ -29,5 +34,48 @@ const (
 	DeviceAssistant
 )
 
+// AssistantSlots is how many assistants there are, and so how many assistant sub-devices: one per wake
+// word Home Assistant offers at once (wakeword.Slots).
+const AssistantSlots = 2
+
 // AssistantDevice is the sub-device holding one slot's settings.
 func AssistantDevice(slot int) uint32 { return DeviceAssistant + uint32(slot) }
+
+// SubDevice is one sub-device: its identity and the short label that names it.
+//
+// The label is the one name it has. Grouped, it follows the device's own name to make the sub-device's
+// ("Echo Spot ring"); flattened, it leads the names of the entities that would be unclear without it
+// ("Assistant 1 wake word sensitivity").
+type SubDevice struct {
+	ID    uint32
+	Label string
+
+	// labelAll puts the label in front of every one of its entities once flattened, which the assistant
+	// slots need because both declare the same names. Elsewhere only the names in labelled take it:
+	// those that would read as something else beside everything on the device itself.
+	labelAll bool
+	labelled []string
+}
+
+// SubDevices is every sub-device, in the order they are announced.
+func SubDevices() []SubDevice {
+	out := []SubDevice{
+		{ID: DeviceRing, Label: "Ring"},
+		// The room's sound as the array hears it, which beside the room's light and the ring following the
+		// room reads as something else entirely.
+		{ID: DeviceMicrophone, Label: "Microphone", labelled: []string{"microphone_sensitivity", "room_floor", "room_level"}},
+		{ID: DevicePlayback, Label: "Playback"},
+	}
+	for slot := range AssistantSlots {
+		out = append(out, SubDevice{ID: AssistantDevice(slot), Label: fmt.Sprintf("Assistant %d", slot+1), labelAll: true})
+	}
+	return out
+}
+
+// flatName is what an entity on this sub-device is called on the device itself.
+func (d SubDevice) flatName(objectID, name string) string {
+	if d.labelAll || slices.Contains(d.labelled, objectID) {
+		return d.Label + " " + lowerFirst(name)
+	}
+	return name
+}
