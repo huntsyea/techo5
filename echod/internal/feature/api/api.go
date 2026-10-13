@@ -25,7 +25,6 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/config"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/bluetooth"
 	"github.com/HuskerMinion/techo5/echod/internal/feature/voice"
-	"github.com/HuskerMinion/techo5/echod/internal/feature/wakeword"
 	"github.com/HuskerMinion/techo5/echod/internal/layout"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -56,6 +55,10 @@ type API struct {
 	mu      sync.Mutex
 	nextPSK *esphome.PSK
 	unkeyed bool
+
+	// regroup is where the entities are announced, grouped or flat, and the way between (grouping.go).
+	// Under mu, since the setup page may change the setting before the server has started.
+	regroup *regrouping
 }
 
 var (
@@ -113,10 +116,22 @@ func (a *API) Start(ctx context.Context) error {
 	}
 
 	device := config.Get().Device
+	registered := component.Default().Entities()
 	ents := esphome.NewEntities()
-	if err := ents.Add(component.Default().Entities()...); err != nil {
+	if err := ents.Add(registered...); err != nil {
 		return err
 	}
+
+	// Before anything serves them, the entities take their places for the stage the device saved. Two
+	// names that would clash at any stage stop the device here, loudly, rather than once somebody turns
+	// grouping off.
+	regroup, devices, err := newRegrouping(device.Name, registered, config.Get().Grouping.Stage)
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+	a.mu.Lock()
+	a.regroup = regroup
+	a.mu.Unlock()
 	if err := ents.AddActions(component.Default().Actions()...); err != nil {
 		return err
 	}
@@ -138,14 +153,17 @@ func (a *API) Start(ctx context.Context) error {
 			VoiceFeatures:     voice.Features,
 			BluetoothFeatures: bluetooth.Get().Features(),
 
-			Devices: subDevices(device.Name),
+			Devices: devices,
 		},
 		PSK:    psk,
 		Logger: slog.Default(),
 		// Persist a key Home Assistant pushes, or the next connection reverts to the old one.
 		OnSetEncryptionKey: a.keySet,
 
-		OnSubscribed: func() { component.Subscribed.Emit(struct{}{}) },
+		OnSubscribed: func() {
+			component.Subscribed.Emit(struct{}{})
+			a.subscribed()
+		},
 
 		// The handlers components answer for themselves rather than through an entity: the voice
 		// satellite's pipeline traffic, and the Bluetooth proxy's subscribe and set-mode messages.
@@ -153,27 +171,6 @@ func (a *API) Start(ctx context.Context) error {
 		Handler: esphome.Chain(append(append(component.Default().Describers(), ents), component.Default().Handlers()...)...),
 	}
 	return nil
-}
-
-// subDevices groups entities onto pages of their own, since Home Assistant puts every entity a device has
-// on one page and there are more here than anyone wants to read.
-//
-// Each name carries the device's own, because Home Assistant shows what it is given verbatim: a bare "Ring"
-// or "Assistant 1" is unreadable in a house with several satellites.
-func subDevices(name string) []esphome.Device {
-	out := []esphome.Device{
-		{ID: component.DeviceRing, Name: name + " ring"},
-		{ID: component.DeviceMicrophone, Name: name + " microphone"},
-		{ID: component.DevicePlayback, Name: name + " playback"},
-	}
-
-	for slot := range wakeword.Slots {
-		out = append(out, esphome.Device{
-			ID:   component.AssistantDevice(slot),
-			Name: fmt.Sprintf("%s assistant %d", name, slot+1),
-		})
-	}
-	return out
 }
 
 // Run listens until ctx is canceled, advertising over mDNS so Home Assistant finds the device
@@ -223,6 +220,11 @@ func (a *API) Run(ctx context.Context) error {
 		// Between serving and listening again nothing reads Info, which is the only moment it can be
 		// changed: a client is told what the device is once, when it connects. The key likewise.
 		a.srv.Info.BluetoothFeatures = bluetooth.Get().Features()
+		// The entities, too, are read by a connection without a lock, so a grouping stage saved while
+		// serving goes onto them here (grouping.go).
+		if devices, ok := a.regrouping().between(); ok {
+			a.srv.Info.Devices = devices
+		}
 		if k := a.takeNextPSK(); k != nil {
 			a.srv.PSK = k
 			slog.Info("serving with a new key", "provisioned", !k.IsZero())
