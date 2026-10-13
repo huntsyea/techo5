@@ -10,6 +10,7 @@ import (
 	"github.com/ygelfand/go-esphome-device/api"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/HuskerMinion/techo5/echod/internal/component"
 	"github.com/HuskerMinion/techo5/echod/internal/hardware/camera"
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
@@ -22,6 +23,10 @@ import (
 const (
 	// objectID is the entity's identifier: camera.<device>_camera in Home Assistant.
 	objectID = "camera"
+
+	// entityName is what Home Assistant shows, and with the object id's device (the device itself) and the
+	// type, what makes the entity's unique id there.
+	entityName = "Camera"
 
 	// chunk is how much JPEG goes in one CameraImageResponse; ESPHome sends 1 KiB pieces.
 	chunk = 1024
@@ -48,6 +53,15 @@ func key(s string) uint32 {
 // DescribesEntities marks the feature as a component.Describer.
 func (f *Feature) DescribesEntities() {}
 
+// Placements is where the entity is announced, for the screen's manifest: on the device itself under
+// its own name, at every grouping stage, and only on a device with a camera, as in Handle.
+func (f *Feature) Placements() []component.Placement {
+	if !camera.Available() {
+		return nil
+	}
+	return []component.Placement{{ObjectID: objectID, Type: "camera", Name: entityName}}
+}
+
 // Handle answers the entity list and the image requests.
 func (f *Feature) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message) error {
 	switch m := msg.(type) {
@@ -58,7 +72,7 @@ func (f *Feature) Handle(ctx context.Context, c *esphome.Conn, msg proto.Message
 		return c.Send(&api.ListEntitiesCameraResponse{
 			ObjectId: objectID,
 			Key:      key(objectID),
-			Name:     "Camera",
+			Name:     entityName,
 			Icon:     "mdi:camera",
 		})
 	case *api.CameraImageRequest:
