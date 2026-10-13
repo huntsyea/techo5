@@ -64,6 +64,9 @@ type API struct {
 	// regroup is where the entities are announced, grouped or flat, and the way between (grouping.go).
 	// Under mu, since the setup page may change the setting before the server has started.
 	regroup *regrouping
+
+	// cfg is where grouping is kept, nil for the device's own store. A test's own store, otherwise.
+	cfg settings
 }
 
 var (
@@ -130,7 +133,7 @@ func (a *API) Start(ctx context.Context) error {
 	// Before anything serves them, the entities take their places for the stage the device saved. Two
 	// names that would clash at any stage stop the device here, loudly, rather than once somebody turns
 	// grouping off.
-	regroup, announced, err := newRegrouping(device.Name, registered, config.Get().Grouping.Stage)
+	regroup, announced, err := newRegrouping(a.settings(), device.Name, registered)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

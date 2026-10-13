@@ -56,27 +56,38 @@ var todaysSubDevices = []esphome.Device{
 // as a device starting up with them would have.
 type device struct {
 	*regrouping
+	st      *config.Store
 	ents    []esphome.Entity
 	devices []esphome.Device
 }
 
 func start(t *testing.T, grouped bool, stage config.Stage) *device {
 	t.Helper()
-	config.Use(filepath.Join(t.TempDir(), "state.json"))
-	if err := config.Set().Grouping().Grouped(grouped); err != nil {
+	st := store(t)
+	if err := st.Set().Grouping().Grouped(grouped); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.Set().Grouping().Stage(stage); err != nil {
+	if err := st.Set().Grouping().Stage(stage); err != nil {
 		t.Fatal(err)
 	}
-	return restart(t)
+	return restart(t, st)
+}
+
+// store is a fresh settings file. Not the process-wide one: other packages' goroutines read that.
+func store(t *testing.T) *config.Store {
+	t.Helper()
+	st, err := config.Load(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 // restart is the daemon coming up again over whatever the store holds.
-func restart(t *testing.T) *device {
+func restart(t *testing.T, st *config.Store) *device {
 	t.Helper()
-	d := &device{ents: entities()}
-	r, a, err := newRegrouping("Bedroom", d.ents, config.Get().Grouping.Stage)
+	d := &device{ents: entities(), st: st}
+	r, a, err := newRegrouping(st, "Bedroom", d.ents)
 	if err != nil {
 		t.Fatalf("starting: %v", err)
 	}
@@ -136,7 +147,7 @@ func TestByDefaultTheDeviceIsAsItAlwaysWas(t *testing.T) {
 			t.Fatal("a device already where its setting wants it asked Home Assistant to reconnect")
 		}
 	}
-	if s := config.Get().Grouping.Stage; s != config.StageGrouped {
+	if s := d.st.Get().Grouping.Stage; s != config.StageGrouped {
 		t.Errorf("saved stage = %s, want grouped", s)
 	}
 }
@@ -163,7 +174,7 @@ func TestOneStepPerCompletedConnection(t *testing.T) {
 	if !d.subscribed() {
 		t.Fatal("Home Assistant saw the grouped device and nothing moved on")
 	}
-	if s := config.Get().Grouping.Stage; s != config.StageRenamed {
+	if s := d.st.Get().Grouping.Stage; s != config.StageRenamed {
 		t.Fatalf("saved stage = %s, want renamed before the reconnect", s)
 	}
 	if !equalPlaced(d.now(), before) {
@@ -192,11 +203,11 @@ func TestOneStepPerCompletedConnection(t *testing.T) {
 		t.Errorf("renamed: devices = %v, want unchanged %v", devicesOf(got), devicesOf(before))
 	}
 
-	if s := config.Get().Grouping.Stage; s != config.StageRenamed {
+	if s := d.st.Get().Grouping.Stage; s != config.StageRenamed {
 		t.Errorf("saved stage = %s after one step, want renamed", s)
 	}
 	d.served()
-	if s := config.Get().Grouping.Stage; s != config.StageRenamed || !maps.Equal(names(d.now()), names(got)) {
+	if s := d.st.Get().Grouping.Stage; s != config.StageRenamed || !maps.Equal(names(d.now()), names(got)) {
 		t.Error("serving again with no connection in between moved the device on")
 	}
 }
@@ -241,7 +252,7 @@ func checkStage(t *testing.T, d *device, s config.Stage) {
 	if !maps.Equal(names(got), wantNames) {
 		t.Errorf("%s: names = %v, want %v", s, names(got), wantNames)
 	}
-	if saved := config.Get().Grouping.Stage; saved != s {
+	if saved := d.st.Get().Grouping.Stage; saved != s {
 		t.Errorf("%s: saved stage = %s", s, saved)
 	}
 }
@@ -270,10 +281,9 @@ func TestTurnedOffTheDeviceWalksToFlatAndStops(t *testing.T) {
 func TestARestartResumesAtTheSavedStage(t *testing.T) {
 	for i, s := range config.Stages {
 		t.Run(string(s), func(t *testing.T) {
-			start(t, false, s)
-			d := restart(t)
+			d := restart(t, start(t, false, s).st)
 			checkStage(t, d, s)
-			if d.served(); config.Get().Grouping.Stage != s {
+			if d.served(); d.st.Get().Grouping.Stage != s {
 				t.Fatal("a restarted device moved on before Home Assistant had seen it")
 			}
 			stepped := d.connected()
@@ -294,7 +304,7 @@ func TestARestartBetweenSavingAndAnnouncingAnnouncesTheSavedStage(t *testing.T) 
 	if !d.subscribed() {
 		t.Fatal("no step")
 	}
-	checkStage(t, restart(t), config.StageMoved)
+	checkStage(t, restart(t, d.st), config.StageMoved)
 }
 
 // Turned back on, the same stages run the other way, from wherever the device is.
@@ -304,7 +314,7 @@ func TestTurnedBackOnTheDeviceWalksBackToGrouped(t *testing.T) {
 	d.connected()
 	checkStage(t, d, config.StageMoved)
 
-	if err := config.Set().Grouping().Grouped(true); err != nil {
+	if err := d.st.Set().Grouping().Grouped(true); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []config.Stage{config.StageRenamed, config.StageGrouped} {
@@ -320,7 +330,7 @@ func TestTurnedBackOnTheDeviceWalksBackToGrouped(t *testing.T) {
 
 // api is the server around a device, for what the setup page calls.
 func (d *device) api() *API {
-	return &API{reconnect: make(chan struct{}, 1), regroup: d.regrouping}
+	return &API{reconnect: make(chan struct{}, 1), regroup: d.regrouping, cfg: d.st}
 }
 
 func reconnected(a *API) bool {
@@ -342,7 +352,7 @@ func TestTurningGroupingOffStepsAtOnceWhenHomeAssistantHasSeenTheDevice(t *testi
 	if err := a.SetGrouped(false); err != nil {
 		t.Fatal(err)
 	}
-	if config.Get().Grouping.Grouped {
+	if d.st.Get().Grouping.Grouped {
 		t.Fatal("the setting was not saved")
 	}
 	if !reconnected(a) {
@@ -360,7 +370,7 @@ func TestAChangedSettingWaitsForHomeAssistantToSeeTheCurrentStage(t *testing.T) 
 	if err := a.SetGrouped(false); err != nil {
 		t.Fatal(err)
 	}
-	if reconnected(a) || config.Get().Grouping.Stage != config.StageGrouped {
+	if reconnected(a) || d.st.Get().Grouping.Stage != config.StageGrouped {
 		t.Fatal("a device Home Assistant had not seen since starting stepped on a changed setting")
 	}
 
@@ -369,7 +379,7 @@ func TestAChangedSettingWaitsForHomeAssistantToSeeTheCurrentStage(t *testing.T) 
 	if err := a.SetGrouped(false); err != nil {
 		t.Fatal(err)
 	}
-	if reconnected(a) || config.Get().Grouping.Stage != config.StageRenamed {
+	if reconnected(a) || d.st.Get().Grouping.Stage != config.StageRenamed {
 		t.Fatal("a stage Home Assistant had not seen yet was stepped past")
 	}
 }
@@ -377,21 +387,21 @@ func TestAChangedSettingWaitsForHomeAssistantToSeeTheCurrentStage(t *testing.T) 
 // Before the server has started there is nothing to step: the setting is saved, and the device
 // starts at its saved stage and goes on from there.
 func TestSettingGroupingBeforeTheServerStartsOnlySavesIt(t *testing.T) {
-	config.Use(filepath.Join(t.TempDir(), "state.json"))
-	a := &API{reconnect: make(chan struct{}, 1)}
+	st := store(t)
+	a := &API{reconnect: make(chan struct{}, 1), cfg: st}
 	if err := a.SetGrouped(false); err != nil {
 		t.Fatal(err)
 	}
-	if g := config.Get().Grouping; g.Grouped || g.Stage != config.StageGrouped || reconnected(a) {
+	if g := st.Get().Grouping; g.Grouped || g.Stage != config.StageGrouped || reconnected(a) {
 		t.Fatalf("grouping = %+v", g)
 	}
 }
 
 // Two entities that would share a name once flattened stop the device at start-up, grouped or not.
 func TestNamesThatWouldClashFlattenedStopTheStart(t *testing.T) {
-	config.Use(filepath.Join(t.TempDir(), "state.json"))
+	st := store(t)
 	ents := append(entities(), &esphome.Number{Base: esphome.Base{ObjectID: "room_sensitivity", Name: "Microphone room sensitivity"}})
-	if _, _, err := newRegrouping("Bedroom", ents, config.StageGrouped); err == nil {
+	if _, _, err := newRegrouping(st, "Bedroom", ents); err == nil {
 		t.Fatal("a device whose flattened names clash started")
 	}
 }

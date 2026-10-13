@@ -26,7 +26,20 @@ import (
 	"github.com/HuskerMinion/techo5/echod/internal/lib/safe"
 )
 
+// settings is where the grouping setting and stage are kept: the device's store, or a test's.
+type settings interface {
+	Get() config.Config
+	Set() config.Writer
+}
+
+// stored is the device's own store.
+type stored struct{}
+
+func (stored) Get() config.Config { return config.Get() }
+func (stored) Set() config.Writer { return config.Set() }
+
 type regrouping struct {
+	cfg      settings
 	name     string
 	declared []component.Placement
 	ents     []esphome.Entity
@@ -44,10 +57,11 @@ type regrouping struct {
 	due config.Stage
 }
 
-// newRegrouping announces the stage the device saved. It fails on placements that could not be
+// newRegrouping announces the stage the device saved in cfg. It fails on placements that could not be
 // announced at every stage, two names that would clash among them, which is a device that should not
 // start rather than one that fails only when somebody turns grouping off.
-func newRegrouping(name string, ents []esphome.Entity, stage config.Stage) (*regrouping, component.Announcement, error) {
+func newRegrouping(cfg settings, name string, ents []esphome.Entity) (*regrouping, component.Announcement, error) {
+	stage := cfg.Get().Grouping.Stage
 	// Declared before anything is applied: Apply writes over what it reads.
 	declared, err := component.Declared(ents)
 	if err != nil {
@@ -60,7 +74,7 @@ func newRegrouping(name string, ents []esphome.Entity, stage config.Stage) (*reg
 	if err := component.Apply(ents, a); err != nil {
 		return nil, component.Announcement{}, err
 	}
-	return &regrouping{name: name, declared: declared, ents: ents, stage: stage}, a, nil
+	return &regrouping{cfg: cfg, name: name, declared: declared, ents: ents, stage: stage}, a, nil
 }
 
 // subscribed is Home Assistant having finished a connection at the current stage. It reports whether a
@@ -87,11 +101,11 @@ func (r *regrouping) step() bool {
 	if !r.seen || r.due != "" {
 		return false
 	}
-	next := component.Next(config.Get().Grouping.Grouped, r.stage)
+	next := component.Next(r.cfg.Get().Grouping.Grouped, r.stage)
 	if next == r.stage {
 		return false
 	}
-	if err := config.Set().Grouping().Stage(next); err != nil {
+	if err := r.cfg.Set().Grouping().Stage(next); err != nil {
 		slog.Error("saving the next grouping stage failed; staying where home assistant last saw the device",
 			"stage", r.stage, "next", next, "err", err)
 		return false
@@ -119,7 +133,7 @@ func (r *regrouping) between() (component.Announcement, bool) {
 		return component.Announcement{}, false
 	}
 	slog.Info("grouping stage changed", "from", r.stage, "to", r.due,
-		"grouped", config.Get().Grouping.Grouped)
+		"grouped", r.cfg.Get().Grouping.Grouped)
 	r.stage, r.due, r.seen = r.due, "", false
 	return a, true
 }
@@ -129,7 +143,7 @@ func (r *regrouping) between() (component.Announcement, bool) {
 // Assistant has already seen the stage the device is at. Turning it back on partway walks back the
 // same way. Stage says how far the device has got.
 func (a *API) SetGrouped(v bool) error {
-	if err := config.Set().Grouping().Grouped(v); err != nil {
+	if err := a.settings().Set().Grouping().Grouped(v); err != nil {
 		return err
 	}
 	if r := a.regrouping(); r != nil && r.changed() {
@@ -146,7 +160,14 @@ func (a *API) Stage() config.Stage {
 		defer r.mu.Unlock()
 		return r.stage
 	}
-	return config.Get().Grouping.Stage
+	return a.settings().Get().Grouping.Stage
+}
+
+func (a *API) settings() settings {
+	if a.cfg != nil {
+		return a.cfg
+	}
+	return stored{}
 }
 
 func (a *API) regrouping() *regrouping {
